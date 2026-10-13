@@ -237,12 +237,12 @@ Open `http://localhost:5000`.
 
 ### Building standalone binaries (CI)
 
-The release workflow uses [`@vercel/pkg`](https://github.com/vercel/pkg) to bundle the entire app (server, views, and public assets) into a single executable per platform. No Node.js installation required on the target machine.
+The release workflow uses [`pkg`](https://github.com/vercel/pkg) to bundle the entire app (server, views, and public assets) into a single executable per platform. No Node.js installation required on the target machine.
 
 **Manual build:**
 
 ```bash
-npm install -g @vercel/pkg
+npm install -g pkg
 pkg . --target node18-win-x64   --output dist/Toolshed-Windows.exe
 pkg . --target node18-macos-x64 --output dist/Toolshed-macOS
 pkg . --target node18-linux-x64 --output dist/Toolshed-Linux

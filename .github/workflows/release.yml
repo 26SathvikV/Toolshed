@@ -80,7 +80,7 @@ jobs:
       #    needed alongside the binary.  The user only needs a .env file.
       # ------------------------------------------------------------------ #
       - name: Install pkg
-        run: npm install -g @vercel/pkg
+        run: npm install -g pkg
 
       - name: Build standalone executable
         shell: bash
