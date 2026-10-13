@@ -1,0 +1,1299 @@
+<!--
+    Convert Page
+    This page allows users to convert various file types (images, documents, audio, video, data) into different formats. It includes a drag-and-drop interface, a conversion queue, and download options for the converted files.
+-->
+
+<!-- Convert Page Styles -->
+<style>
+    /* Drop Zone */
+    .dz {
+        border: 2px dashed var(--border-color);
+        border-radius: 12px;
+        padding: 40px 24px;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+        margin-bottom: 16px;
+        user-select: none;
+    }
+    .dz:hover, .dz.dz-over {
+        border-color: var(--link-color);
+        background: color-mix(in srgb, var(--link-color) 6%, transparent);
+    }
+    .dz-icon { font-size: 2.4rem; display: block; margin-bottom: 8px; opacity: 0.4; pointer-events: none; }
+    .dz p { margin: 0; pointer-events: none; }
+    .dz .dz-browse { color: var(--link-color); pointer-events: none; }
+    .dz .dz-hint { font-size: 0.78rem; opacity: 0.55; margin-top: 6px !important; }
+
+    /* Toolbar */
+    .cv-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+    }
+    .cv-bar button {
+        padding: 7px 16px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font-size: 0.87rem;
+        transition: background 0.15s;
+        white-space: nowrap;
+    }
+    .cv-bar button:hover:not(:disabled) { background: color-mix(in srgb, var(--border-color) 40%, transparent); }
+    .cv-bar button:disabled { opacity: 0.38; cursor: not-allowed; }
+    #cvAllBtn { border-color: var(--link-color); color: var(--link-color); }
+    #cvAllBtn:not(:disabled):hover { background: color-mix(in srgb, var(--link-color) 10%, transparent); }
+    #cvNoteEl { font-size: 0.8rem; opacity: 0.55; }
+
+    /* Queue table */
+    .q-wrap { overflow-x: auto; }
+    .q-tbl { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+    .q-tbl th {
+        text-align: left; padding: 8px 10px;
+        border-bottom: 1px solid var(--border-color);
+        font-weight: 600; opacity: 0.65; white-space: nowrap;
+    }
+    .q-tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+    .q-tbl tr:last-child td { border-bottom: none; }
+    .q-tbl tbody tr:hover td { background: color-mix(in srgb, var(--border-color) 15%, transparent); }
+
+    .q-name-cell { max-width: 240px; }
+    .q-fname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 220px; }
+    .q-fsz { font-size: 0.73rem; opacity: 0.5; }
+    .q-fmt-cell select {
+        background: var(--code-bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: 5px;
+        padding: 3px 6px;
+        font-size: 0.82rem;
+        color: inherit;
+        max-width: 160px;
+    }
+    .q-act-cell { text-align: right; white-space: nowrap; }
+    .q-empty-row td { text-align: center; padding: 48px !important; opacity: 0.45; }
+
+    /* Badges */
+    .badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
+    .b-q  { background: color-mix(in srgb, var(--border-color) 50%, transparent); }
+    .b-cv { background: color-mix(in srgb, #f0a500 18%, transparent); color: #f0a500; }
+    .b-ok { background: color-mix(in srgb, #4caf50 15%, transparent); color: #4caf50; }
+    .b-er { background: color-mix(in srgb, #e53935 15%, transparent); color: #e53935; cursor: help; }
+
+    /* Action buttons */
+    .btn-dl {
+        padding: 4px 12px; border-radius: 5px;
+        background: var(--link-color); color: #fff;
+        text-decoration: none; font-size: 0.82rem;
+        display: inline-block;
+    }
+    .btn-dl:hover { opacity: 0.85; }
+    .btn-rm {
+        background: none; border: none; cursor: pointer;
+        color: inherit; opacity: 0.35; font-size: 1.1rem; padding: 0 4px; line-height: 1;
+    }
+    .btn-rm:hover { opacity: 0.9; }
+</style>
+
+<!-- Convert Page Content -->
+
+<!-- Drop Zone for File Upload -->
+<div class="dz" id="dropZone">
+    <p>Drop files here or <span class="dz-browse">browse</span></p>
+    <p class="dz-hint">Images → PDF · DOCX / ODT / RTF → PDF · PPTX → PDF · XLSX → PDF · PDF → text / images · Audio · Video · CSV · JSON · YAML · EPUB and more</p>
+</div>
+<input type="file" id="fileInput" multiple hidden>
+
+<!-- Conversion Toolbar -->
+<div class="cv-bar">
+    <button id="cvAllBtn" disabled onclick="convertAll()">Convert All</button>
+    <button id="dlAllBtn" style="display:none" onclick="downloadAll()">Download All as ZIP</button>
+    <span id="cvNoteEl"></span>
+</div>
+
+<!-- Conversion Queue Table -->
+<div class="q-wrap">
+    <table class="q-tbl">
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>Convert to</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="qBody">
+            <tr class="q-empty-row"><td colspan="4">Drop files above to get started</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Convert Page Scripts -->
+<script>
+    // ── Daily convert limit ───────────────────────────────────────────────────────
+    const _CV_PLAN      = '<%= (locals.user && user.plan) ? user.plan : "guest" %>';
+    const _CV_BILLING   = '<%- (!locals.monetizationHidden && locals.billingUrl && billingUrl) ? billingUrl : "" %>';
+    const _CV_LIMITS    = { guest: 20, free: 20, pro: 200, studio: null };
+    const _CV_TODAY     = new Date().toISOString().slice(0, 10);
+    const _CV_STORE_KEY = 'ts_convert';
+
+    function _cvUsed() { // Returns the number of conversions used today from localStorage
+        try {
+            const d = JSON.parse(localStorage.getItem(_CV_STORE_KEY) || 'null');
+            return (d && d.date === _CV_TODAY) ? (d.count || 0) : 0;
+        } catch { return 0; }
+    }
+
+    function _cvIncrement(n) { // Increments the number of conversions used today in localStorage by n
+        localStorage.setItem(_CV_STORE_KEY, JSON.stringify({ date: _CV_TODAY, count: _cvUsed() + n }));
+    }
+
+    function _cvLimit() { return _CV_LIMITS[_CV_PLAN] ?? _CV_LIMITS.free; } // Returns the daily conversion limit for the current plan, or null for unlimited
+
+    // ── Format map ────────────────────────────────────────────────────────────────
+    const FMT = {
+        // Images
+        jpg:  { cat:'image',    opts:['jpg','png','webp','bmp','ico','pdf'],             def:'png' },
+        jpeg: { cat:'image',    opts:['jpg','png','webp','bmp','ico','pdf'],             def:'png' },
+        png:  { cat:'image',    opts:['jpg','png','webp','bmp','ico','pdf'],             def:'jpg' },
+        gif:  { cat:'image',    opts:['jpg','png','webp','ico','pdf'],                   def:'png' },
+        webp: { cat:'image',    opts:['jpg','png','webp','bmp','ico','pdf'],             def:'jpg' },
+        bmp:  { cat:'image',    opts:['jpg','png','webp','bmp','ico','pdf'],             def:'jpg' },
+        svg:  { cat:'image',    opts:['png','jpg','ico','pdf'],                          def:'png' },
+        tiff: { cat:'image',    opts:['jpg','png','webp','ico','pdf'],                   def:'jpg' },
+        tif:  { cat:'image',    opts:['jpg','png','webp','ico','pdf'],                   def:'jpg' },
+        avif: { cat:'image',    opts:['jpg','png','webp','ico','pdf'],                   def:'jpg' },
+        ico:  { cat:'image',    opts:['png','jpg'],                                      def:'png' },
+        // Video
+        mp4:  { cat:'video',    opts:['mp4','webm','mov','avi','mkv','mp3','wav','gif'], def:'mp3' },
+        webm: { cat:'video',    opts:['mp4','webm','mov','avi','mp3','wav'],             def:'mp4' },
+        mov:  { cat:'video',    opts:['mp4','webm','mov','avi','mkv','mp3','wav'],       def:'mp4' },
+        avi:  { cat:'video',    opts:['mp4','webm','mov','avi','mkv','mp3','wav'],       def:'mp4' },
+        mkv:  { cat:'video',    opts:['mp4','webm','mov','avi','mkv','mp3','wav'],       def:'mp4' },
+        wmv:  { cat:'video',    opts:['mp4','webm','mov','mp3'],                         def:'mp4' },
+        flv:  { cat:'video',    opts:['mp4','webm','mp3'],                               def:'mp4' },
+        m4v:  { cat:'video',    opts:['mp4','webm','mov','mp3'],                         def:'mp4' },
+        // Audio
+        mp3:  { cat:'audio',    opts:['mp3','wav','ogg','flac','m4a','aac'],             def:'wav' },
+        wav:  { cat:'audio',    opts:['mp3','wav','ogg','flac','m4a'],                   def:'mp3' },
+        ogg:  { cat:'audio',    opts:['mp3','wav','ogg','flac'],                         def:'mp3' },
+        flac: { cat:'audio',    opts:['mp3','wav','ogg','flac','m4a'],                   def:'mp3' },
+        m4a:  { cat:'audio',    opts:['mp3','wav','ogg','flac','m4a','aac'],             def:'mp3' },
+        aac:  { cat:'audio',    opts:['mp3','wav','ogg','m4a','aac'],                    def:'mp3' },
+        wma:  { cat:'audio',    opts:['mp3','wav','ogg','flac'],                         def:'mp3' },
+        opus: { cat:'audio',    opts:['mp3','wav','ogg'],                                def:'mp3' },
+        // Documents
+        pdf:      { cat:'document', opts:['txt','docx','zip'],                           def:'txt' },
+        docx:     { cat:'document', opts:['pdf','html','txt'],                           def:'pdf' },
+        doc:      { cat:'document', opts:['pdf','txt'],                                  def:'pdf' },
+        rtf:      { cat:'document', opts:['pdf','txt'],                                  def:'pdf' },
+        html:     { cat:'document', opts:['txt','md'],                                   def:'txt' },
+        htm:      { cat:'document', opts:['txt','md'],                                   def:'txt' },
+        md:       { cat:'document', opts:['html'],                                       def:'html' },
+        markdown: { cat:'document', opts:['html'],                                       def:'html' },
+        txt:      { cat:'document', opts:['html','md'],                                  def:'html' },
+        epub:     { cat:'document', opts:['txt','html'],                                 def:'txt' },
+        odt:      { cat:'document', opts:['pdf','txt'],                                  def:'pdf' },
+        // Presentations
+        pptx:     { cat:'document', opts:['pdf'],                                        def:'pdf' },
+        ppt:      { cat:'document', opts:['pdf'],                                        def:'pdf' },
+        odp:      { cat:'document', opts:['pdf'],                                        def:'pdf' },
+        // Data
+        csv:  { cat:'data',     opts:['json','xlsx','tsv'],                              def:'json' },
+        json: { cat:'data',     opts:['csv','yaml','xml','xlsx','toml'],                 def:'csv' },
+        yaml: { cat:'data',     opts:['json'],                                           def:'json' },
+        yml:  { cat:'data',     opts:['json'],                                           def:'json' },
+        xml:  { cat:'data',     opts:['json'],                                           def:'json' },
+        // Spreadsheets
+        xlsx: { cat:'data',     opts:['pdf','csv','json'],                               def:'csv' },
+        xls:  { cat:'data',     opts:['pdf','csv','json'],                               def:'csv' },
+        ods:  { cat:'data',     opts:['pdf','csv','json'],                               def:'csv' },
+        // Delimited / tabular
+        tsv:        { cat:'data', opts:['csv','json'],                                   def:'csv' },
+        // Config / data formats
+        toml:       { cat:'data', opts:['json'],                                         def:'json' },
+        ini:        { cat:'data', opts:['json'],                                         def:'json' },
+        cfg:        { cat:'data', opts:['json'],                                         def:'json' },
+        conf:       { cat:'data', opts:['json'],                                         def:'json' },
+        env:        { cat:'data', opts:['json'],                                         def:'json' },
+        properties: { cat:'data', opts:['json'],                                         def:'json' },
+        // Subtitles
+        srt:  { cat:'data',     opts:['vtt','txt'],                                      def:'vtt' },
+        vtt:  { cat:'data',     opts:['srt','txt'],                                      def:'srt' },
+    };
+
+    // ── Format labels ─────────────────────────────────────────────────────────────
+    const LABEL = {
+        jpg:'JPEG', png:'PNG', webp:'WebP', bmp:'BMP', gif:'Animated GIF', ico:'ICO (favicon)', pdf:'PDF',
+        mp4:'MP4', webm:'WebM', mov:'MOV', avi:'AVI', mkv:'MKV',
+        mp3:'MP3', wav:'WAV', ogg:'OGG', flac:'FLAC', m4a:'M4A', aac:'AAC', opus:'OPUS',
+        html:'HTML', txt:'Plain text', docx:'DOCX (text)', zip:'PNG images (ZIP)',
+        md:'Markdown', xlsx:'Excel (XLSX)',
+        csv:'CSV', json:'JSON', yaml:'YAML', xml:'XML', toml:'TOML', tsv:'TSV',
+        srt:'SRT subtitles', vtt:'VTT subtitles',
+    };
+
+    // ── Server-side docs availability ─────────────────────────────────────────────
+    let _docsAvail = false;
+    fetch('/api/docs/check').then(r => r.json()).then(d => { _docsAvail = d.available; }).catch(() => {});
+
+    // ── State ─────────────────────────────────────────────────────────────────────
+    let items = [], nextId = 0;
+    const _libSt = {};
+    let ffmpegInst = null, ffmpegLoading = false;
+    let avQueue = [], avRunning = false;
+
+    // ── CDN loader - ensures a library is loaded from a CDN, returns a Promise that resolves when loaded ───
+    function ensureLib(url) {
+        return new Promise((resolve, reject) => {
+            if (_libSt[url] === 'done') { resolve(); return; } // Already loaded
+            if (_libSt[url] === 'loading') { // Already loading, wait for it
+                const t = setInterval(() => { if (_libSt[url] === 'done') { clearInterval(t); resolve(); } }, 100);
+                return;
+            }
+
+            _libSt[url] = 'loading';
+            const s = document.createElement('script');
+            s.src = url;
+            s.onload = () => { _libSt[url] = 'done'; resolve(); };
+            s.onerror = () => reject(new Error('CDN load failed: ' + url));
+            document.head.appendChild(s);
+        });
+    }
+
+    // ── Processes Uploads ─────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+        const dz = document.getElementById('dropZone');
+        const fi = document.getElementById('fileInput');
+        dz.addEventListener('click', () => fi.click());
+        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dz-over'); });
+        dz.addEventListener('dragleave', e => { if (!dz.contains(e.relatedTarget)) dz.classList.remove('dz-over'); });
+        dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dz-over'); addFiles(Array.from(e.dataTransfer.files)); });
+        fi.addEventListener('change', () => { addFiles(Array.from(fi.files)); fi.value = ''; });
+    });
+
+    // ── Add files ─────────────────────────────────────────────────────────────────
+    function addFiles(files) {
+        let added = 0;
+        files.forEach(f => {
+            const ext = f.name.split('.').pop().toLowerCase();
+            if (!FMT[ext]) return;
+            const info = FMT[ext];
+            items.push({ id: nextId++, file: f, name: f.name, size: f.size, ext, cat: info.cat, outputFmt: info.def, status: 'queued', downloadUrl: null, downloadName: null });
+            added++;
+        });
+        if (!added && files.length) toast('No supported file types in selection');
+        renderNew();
+        updateBar();
+    }
+
+    // ── Render helpers ────────────────────────────────────────────────────────────
+    // Renders new items in the queue table
+    function renderNew() {
+        // Remove the "empty" row if it exists and there are items
+        const body = document.getElementById('qBody');
+        const empty = body.querySelector('.q-empty-row');
+        if (empty && items.length) empty.remove();
+
+        // Render each item
+        items.forEach(item => {
+            if (document.getElementById('qr' + item.id)) return;
+            const opts = FMT[item.ext].opts.map(o =>
+                `<option value="${o}"${o===item.outputFmt?' selected':''}>${LABEL[o]||o.toUpperCase()}</option>`
+            ).join('');
+            const sz = item.size > 1048576 ? (item.size/1048576).toFixed(1)+' MB' : (item.size/1024).toFixed(0)+' KB';
+            const tr = document.createElement('tr');
+            tr.id = 'qr' + item.id;
+            tr.innerHTML =
+                `<td class="q-name-cell"><span class="q-fname" title="${esc(item.name)}">${esc(item.name.length>34 ? item.name.slice(0,33)+'…' : item.name)}</span><span class="q-fsz">${sz}</span></td>` +
+                `<td class="q-fmt-cell"><select id="qf${item.id}" onchange="setFmt(${item.id},this.value)">${opts}</select></td>` +
+                `<td id="qs${item.id}"><span class="badge b-q">Queued</span></td>` +
+                `<td class="q-act-cell" id="qa${item.id}"><button class="btn-rm" title="Remove" onclick="removeItem(${item.id})">&#x2715;</button></td>`;
+            body.appendChild(tr);
+        });
+    }
+
+    // Updates the output format for a given item ID
+    function setFmt(id, v) { const item = items.find(x => x.id===id); if (item && item.status==='queued') item.outputFmt = v; }
+    function setSt(id, html) { const el = document.getElementById('qs'+id); if (el) el.innerHTML = html; }
+    function setAct(id, html) { const el = document.getElementById('qa'+id); if (el) el.innerHTML = html; }
+
+    // Removes an item from the queue and updates the UI
+    function removeItem(id) {
+        items = items.filter(x => x.id !== id);
+        const tr = document.getElementById('qr'+id);
+        if (tr) tr.remove();
+        const body = document.getElementById('qBody');
+        if (!body.children.length) {
+            body.innerHTML = '<tr class="q-empty-row"><td colspan="4">Drop files above to get started</td></tr>';
+        }
+        updateBar();
+    }
+
+    // Marks an item as done, updates its status and download link
+    function markDone(item) {
+        item.status = 'done';
+        setSt(item.id, '<span class="badge b-ok">Done</span>');
+        setAct(item.id, `<a class="btn-dl" href="${item.downloadUrl}" download="${esc(item.downloadName)}">Download</a>`);
+        updateBar();
+    }
+
+    // Marks an item as errored, updates its status and shows an error message
+    function markError(item, msg) {
+        item.status = 'error';
+        setSt(item.id, `<span class="badge b-er" title="${esc(msg)}">Error</span>`);
+        setAct(item.id, `<button class="btn-rm" title="Remove" onclick="removeItem(${item.id})">&#x2715;</button>`);
+        updateBar();
+    }
+
+    // Updates the toolbar buttons based on the current queue state
+    function updateBar() {
+        const queued = items.filter(x => x.status === 'queued').length;
+        const done   = items.filter(x => x.status === 'done').length;
+        const btn = document.getElementById('cvAllBtn');
+        btn.textContent = queued ? `Convert All (${queued})` : 'Convert All';
+        btn.disabled = !queued;
+        document.getElementById('dlAllBtn').style.display = done > 1 ? 'inline-block' : 'none';
+    }
+
+    // Escapes HTML special characters in a string to prevent XSS
+    function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function toast(msg) { const n = document.getElementById('cvNoteEl'); n.textContent = msg; setTimeout(() => n.textContent='', 3000); }
+
+    // ── Convert All ───────────────────────────────────────────────────────────────
+    // Initiates the conversion process for all queued items, respecting daily limits and handling different file types
+    function convertAll() {
+        // Filter queued items 
+        const queued = items.filter(x => x.status === 'queued');
+        if (!queued.length) return;
+
+        // Daily limit check
+        const lim  = _cvLimit();
+        const used = _cvUsed();
+        const note = document.getElementById('cvNoteEl');
+        if (lim !== null && used >= lim) {
+            const upgradeHtml = _CV_BILLING
+                ? ` <a href="${_CV_BILLING}" target="_blank" rel="noopener" style="text-decoration:underline">Upgrade for more ↗</a>`
+                : '';
+            note.innerHTML = `Daily limit reached (${lim} files). Resets at midnight UTC.${upgradeHtml}`;
+            setTimeout(() => { note.innerHTML = ''; }, 8000);
+            return;
+        }
+
+        // If the batch would exceed the limit, trim it
+        let allowed = queued;
+        if (lim !== null && used + queued.length > lim) {
+            const remaining = lim - used;
+            allowed = queued.slice(0, remaining);
+            const skipped = queued.slice(remaining);
+            skipped.forEach(item => { item.status = 'queued'; });   // leave skipped as queued
+            const upgradeHtml = _CV_BILLING
+                ? ` <a href="${_CV_BILLING}" target="_blank" rel="noopener" style="text-decoration:underline">Upgrade for more ↗</a>`
+                : '';
+            note.innerHTML = `Converting ${remaining} of ${queued.length}: daily limit (${lim}) reached.${upgradeHtml}`;
+            setTimeout(() => { note.innerHTML = ''; }, 8000);
+        }
+        _cvIncrement(allowed.length);
+
+        // Start conversion for allowed items
+        allowed.forEach(item => {
+            item.status = 'converting';
+            setSt(item.id, '<span class="badge b-cv">Converting…</span>');
+            setAct(item.id, '');
+        });
+        updateBar();
+
+        // Separate audio/video from other types for sequential processing
+        const av = allowed.filter(x => x.cat === 'video' || x.cat === 'audio');
+        if (av.length > 1) toast(`${av.length} audio/video files will convert one at a time`);
+
+        // Process each category
+        allowed.filter(x => x.cat === 'image').forEach(x => convertImage(x).catch(e => markError(x, e.message)));
+        allowed.filter(x => x.cat === 'document').forEach(x => convertDocument(x).catch(e => markError(x, e.message)));
+        allowed.filter(x => x.cat === 'data').forEach(x => convertData(x).catch(e => markError(x, e.message)));
+        av.forEach(enqueueAV);
+    }
+
+    // ── Image ─────────────────────────────────────────────────────────────────────
+    // Converts an image file to the specified output format, handling special cases like SVG and ICO
+    async function convertImage(item) {
+        // Special case: if output is PDF, use imageToPdf function
+        if (item.outputFmt === 'pdf') { await imageToPdf(item); return; }
+        let imgSrc;
+
+        // Handle SVG files by reading their text content and encoding it as a data URL
+        if (item.ext === 'svg') {
+            const text = await item.file.text();
+            imgSrc = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(text)));
+        } else {
+            imgSrc = URL.createObjectURL(item.file);
+        }
+
+        // Load the image into an Image object to get its dimensions
+        const img = await new Promise((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i);
+            i.onerror = () => rej(new Error('Could not decode image'));
+            i.src = imgSrc;
+        });
+        if (item.ext !== 'svg') URL.revokeObjectURL(imgSrc);
+
+        // Create a canvas to draw the image onto, ensuring correct dimensions
+        const canvas = document.createElement('canvas');
+        canvas.width  = img.naturalWidth  || 300;
+        canvas.height = img.naturalHeight || 150;
+        const ctx = canvas.getContext('2d');
+        if (item.outputFmt === 'jpg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+        ctx.drawImage(img, 0, 0);
+
+        // Handle ICO output separately, as it requires multiple sizes
+        if (item.outputFmt === 'ico') {
+            const icoBlob = await canvasToIco(canvas, [16, 32, 48]);
+            item.downloadUrl  = URL.createObjectURL(icoBlob);
+            item.downloadName = item.name.replace(/\.[^.]+$/, '.ico');
+            markDone(item); return;
+        }
+
+        // For other formats, convert the canvas to a data URL with the appropriate MIME type
+        const mime = { jpg:'image/jpeg', png:'image/png', webp:'image/webp', bmp:'image/bmp' }[item.outputFmt] || 'image/png';
+
+        // Convert the canvas to a data URL and set the download name
+        item.downloadUrl  = canvas.toDataURL(mime, 0.92);
+        item.downloadName = item.name.replace(/\.[^.]+$/, '.'+item.outputFmt);
+        markDone(item);
+    }
+
+    // Converts a canvas to an ICO file with multiple sizes
+    async function canvasToIco(srcCanvas, sizes) {
+        // Create an array of image entries for each requested size
+        const entries = await Promise.all(sizes.map(async sz => {
+            const cv = document.createElement('canvas');
+            cv.width = cv.height = sz;
+            cv.getContext('2d').drawImage(srcCanvas, 0, 0, sz, sz);
+            const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+            return new Uint8Array(await blob.arrayBuffer());
+        }));
+
+        // Calculate the total size of the ICO file and create an ArrayBuffer to hold it
+        const headerSz = 6 + 16 * entries.length;
+        const total = headerSz + entries.reduce((s, e) => s + e.length, 0);
+        const buf = new ArrayBuffer(total);
+
+        // Write the ICO header
+        const dv = new DataView(buf), b = new Uint8Array(buf);
+        dv.setUint16(0, 0, true); dv.setUint16(2, 1, true); dv.setUint16(4, entries.length, true);
+        let off = headerSz;
+
+        // Write each directory entry and the corresponding image data
+        entries.forEach((data, i) => {
+            const base = 6 + i * 16, sz = sizes[i];
+            dv.setUint8(base, sz >= 256 ? 0 : sz); dv.setUint8(base+1, sz >= 256 ? 0 : sz);
+            dv.setUint8(base+2, 0); dv.setUint8(base+3, 0);
+            dv.setUint16(base+4, 1, true); dv.setUint16(base+6, 32, true);
+            dv.setUint32(base+8, data.length, true); dv.setUint32(base+12, off, true);
+            b.set(data, off); off += data.length;
+        });
+
+        // Return a Blob representing the ICO file
+        return new Blob([buf], { type: 'image/x-icon' });
+    }
+
+    // ── Audio / Video (FFmpeg) ────────────────────────────────────────────────────
+    // Enqueues an audio/video item for conversion, ensuring sequential processing
+    function enqueueAV(item) {
+        avQueue.push(item);
+        if (!avRunning) drainAV();
+    }
+
+    // Processes the audio/video queue sequentially, using FFmpeg for conversion
+    async function drainAV() {
+        avRunning = true;
+        while (avQueue.length) {
+            const item = avQueue.shift();
+            await doAV(item).catch(e => markError(item, e.message));
+        }
+        avRunning = false;
+    }
+
+    // Performs the actual audio/video conversion using FFmpeg, handling progress updates and file output
+    async function doAV(item) {
+        // Ensure FFmpeg is loaded and ready
+        setSt(item.id, '<span class="badge b-cv">Loading FFmpeg…</span>');
+        if (!ffmpegInst) { // Load FFmpeg if not already loaded
+            if (ffmpegLoading) {
+                await new Promise(res => { const t = setInterval(() => { if (!ffmpegLoading) { clearInterval(t); res(); } }, 200); });
+            } else {
+                ffmpegLoading = true;
+                await ensureLib('https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
+                const ff = FFmpeg.createFFmpeg({ corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js', log: false });
+                await ff.load();
+                ffmpegInst = ff;
+                ffmpegLoading = false;
+            }
+        }
+
+        // Start conversion and update progress
+        setSt(item.id, '<span class="badge b-cv">0%</span>');
+        const ff = ffmpegInst;
+        const inF = 'i.' + item.ext, outF = 'o.' + item.outputFmt;
+
+        // Write the input file to FFmpeg's virtual filesystem
+        ff.FS('writeFile', inF, new Uint8Array(await item.file.arrayBuffer()));
+        ff.setProgress(({ ratio }) => setSt(item.id, `<span class="badge b-cv">${Math.min(99,Math.round((ratio||0)*100))}%</span>`));
+
+        // Run FFmpeg with the appropriate arguments for the desired output format
+        await ff.run(...avArgs(inF, outF, item.outputFmt));
+
+        // Read the output file from FFmpeg's virtual filesystem and create a download URL
+        const data = ff.FS('readFile', outF);
+        const MIME = { mp3:'audio/mpeg', wav:'audio/wav', ogg:'audio/ogg', flac:'audio/flac', m4a:'audio/mp4', aac:'audio/aac', opus:'audio/opus', mp4:'video/mp4', webm:'video/webm', mkv:'video/x-matroska', avi:'video/x-msvideo', mov:'video/quicktime', gif:'image/gif' };
+        item.downloadUrl  = URL.createObjectURL(new Blob([data.buffer], { type: MIME[item.outputFmt] || 'application/octet-stream' }));
+        item.downloadName = item.name.replace(/\.[^.]+$/, '.'+item.outputFmt);
+
+        // Clean up FFmpeg's virtual filesystem to free memory
+        try { ff.FS('unlink', inF); } catch {}
+        try { ff.FS('unlink', outF); } catch {}
+        markDone(item);
+    }
+
+    // Generates the appropriate FFmpeg command-line arguments based on the input and output formats
+    function avArgs(inF, outF, ext) {
+        // Base arguments for FFmpeg, including input file
+        const b = ['-i', inF];
+
+        // Determine the output arguments based on the desired output format
+        switch (ext) {
+            case 'mp3':  return [...b, '-q:a', '2', outF];
+            case 'wav':  return [...b, '-c:a', 'pcm_s16le', outF];
+            case 'ogg':  return [...b, '-c:a', 'libvorbis', outF];
+            case 'flac': return [...b, '-c:a', 'flac', outF];
+            case 'm4a':  return [...b, '-c:a', 'aac', outF];
+            case 'aac':  return [...b, '-c:a', 'aac', outF];
+            case 'opus': return [...b, '-c:a', 'libopus', outF];
+            case 'mp4':  return [...b, '-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac', outF];
+            case 'webm': return [...b, '-c:v', 'libvpx-vp9', '-c:a', 'libopus', outF];
+            case 'mkv':  return [...b, '-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac', outF];
+            case 'avi':  return [...b, '-c:v', 'mpeg4', '-c:a', 'mp3', outF];
+            case 'mov':  return [...b, '-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac', '-movflags', '+faststart', outF];
+            case 'gif':  return [...b, '-vf', 'fps=10,scale=480:-1:flags=lanczos', '-loop', '0', outF];
+            default:     return [...b, outF];
+        }
+    }
+
+    // ── Documents ─────────────────────────────────────────────────────────────────
+    const _SERVER_DOCS = new Set(['docx','doc','rtf','odt','pptx','ppt','odp']);
+
+    // Converts a document file to the specified output format, using server-side conversion for certain formats
+    async function convertDocument(item) {
+        if (item.outputFmt === 'pdf' && _SERVER_DOCS.has(item.ext)) { await convertDocumentServer(item); return; }
+        if (item.ext === 'docx')                              await cvDocx(item);
+        else if (item.ext === 'pdf')                          await cvPdf(item);
+        else if (item.ext === 'html' || item.ext === 'htm')   await cvHtml(item);
+        else if (item.ext === 'md' || item.ext === 'markdown') await cvMarkdown(item);
+        else if (item.ext === 'txt')                          await cvTxt(item);
+        else if (item.ext === 'epub')                         await cvEpub(item);
+        else if (item.ext === 'odt')                          await cvOdt(item);
+        else /* rtf / doc */                                  await cvRtf(item);
+    }
+
+    // Uses server-side conversion for certain document formats to PDF, sending the file to the server and receiving the converted PDF
+    async function convertDocumentServer(item) {
+        // Update status to converting
+        setSt(item.id, '<span class="badge b-cv">Converting…</span>');
+
+        // Send the file to the server for conversion
+        const ab   = await item.file.arrayBuffer();
+        const resp = await fetch(`/api/docs/convert?name=${encodeURIComponent(item.name)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: ab
+        });
+
+        // Check for errors in the response
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: 'Server error ' + resp.status }));
+            throw new Error(err.error || 'Conversion failed');
+        }
+
+        // Create a download URL for the converted PDF and update the item
+        const blob = await resp.blob();
+        item.downloadUrl  = URL.createObjectURL(blob);
+        item.downloadName = item.name.replace(/\.[^.]+$/, '.pdf');
+        markDone(item);
+    }
+
+    // Converts a DOCX file to the specified output format (TXT or HTML) using the Mammoth.js library
+    async function cvDocx(item) {
+        // Load Mammoth.js from CDN and extract text or HTML from the DOCX file
+        await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.7.0/mammoth.browser.min.js');
+
+        // Read the DOCX file as an ArrayBuffer and use Mammoth to extract the content
+        const ab = await item.file.arrayBuffer();
+        const fn = item.outputFmt === 'txt' ? mammoth.extractRawText : mammoth.convertToHtml;
+
+        // Perform the conversion and create a download URL for the result
+        const result = await fn({ arrayBuffer: ab });
+        const mime = item.outputFmt === 'txt' ? 'text/plain' : 'text/html';
+
+        item.downloadUrl  = URL.createObjectURL(new Blob([result.value], { type: mime }));
+        item.downloadName = item.name.replace(/\.docx$/i, '.'+item.outputFmt);
+        markDone(item);
+    }
+
+    // Converts a PDF file to the specified output format (TXT, DOCX, or ZIP of images) using the PDF.js library
+    const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    let _pdfInit = false;
+
+    // Loads the PDF.js library from CDN and initializes it if not already done
+    async function loadPdfJs() {
+        await ensureLib(PDFJS);
+        if (!_pdfInit) {
+            window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc =
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            _pdfInit = true;
+        }
+        return window['pdfjs-dist/build/pdf'];
+    }
+
+    // Converts a PDF file to the specified output format (TXT, DOCX, or ZIP of images) using the PDF.js library
+    async function cvPdf(item) {
+        // Load PDF.js and get the PDF document from the uploaded file
+        const pdfjsLib = await loadPdfJs();
+        const pdf = await pdfjsLib.getDocument({ data: await item.file.arrayBuffer() }).promise;
+
+        // Handle different output formats based on the user's selection
+        if (item.outputFmt === 'txt') {
+            // Array to hold extracted text from each page
+            const pages = [];
+
+            // Loop through each page of the PDF and extract the text content
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                pages.push(content.items.map(x => x.str).join(' '));
+            }
+
+            // Create a Blob from the extracted text and generate a download URL for the TXT file
+            item.downloadUrl  = URL.createObjectURL(new Blob([pages.join('\n\n')], { type: 'text/plain' }));
+            item.downloadName = item.name.replace(/\.pdf$/i, '.txt');
+            markDone(item); return;
+        }
+
+        // Handle DOCX output format by extracting text from each page and building a DOCX file using the buildDocx function
+        if (item.outputFmt === 'docx') {
+            // Load JSZip library from CDN to create a DOCX file
+            await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+            const paragraphs = [];
+
+            // Loop through each page of the PDF, extract the text content, and add it to the paragraphs array
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                paragraphs.push(content.items.map(x => x.str).join(' '));
+            }
+
+            // Build the DOCX file using the extracted paragraphs and generate a download URL for the DOCX file
+            item.downloadUrl  = URL.createObjectURL(await buildDocx(paragraphs));
+            item.downloadName = item.name.replace(/\.pdf$/i, '.docx');
+            markDone(item); return;
+        }
+
+        // Handle ZIP output format by rendering each page of the PDF as an image and adding it to a ZIP file using JSZip
+        if (item.outputFmt === 'zip') {
+            // Load JSZip library from CDN to create a ZIP file
+            await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+            const zip  = new JSZip();
+            const base = item.name.replace(/\.pdf$/i, '');
+
+            // Loop through each page of the PDF, render it to a canvas, and add the resulting image to the ZIP file
+            for (let i = 1; i <= pdf.numPages; i++) {
+                setSt(item.id, `<span class="badge b-cv">Page ${i}/${pdf.numPages}</span>`);
+                const page = await pdf.getPage(i);
+                const vp   = page.getViewport({ scale: 2 });
+                const cv   = document.createElement('canvas');
+                cv.width = vp.width; cv.height = vp.height;
+                await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+                const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+                zip.file(`${base}_p${String(i).padStart(3,'0')}.png`, blob);
+            }
+
+            // Generate a Blob from the ZIP file and create a download URL for the ZIP file
+            item.downloadUrl  = URL.createObjectURL(await zip.generateAsync({ type: 'blob' }));
+            item.downloadName = base + '_pages.zip';
+            markDone(item);
+        }
+    }
+
+    // Converts an HTML file to the specified output format (TXT or Markdown) using DOMParser and Turndown.js
+    async function cvHtml(item) {
+        // Load the HTML file as text and parse it into a DOM document
+        const text = await item.file.text();
+        const doc = new DOMParser().parseFromString(text, 'text/html');
+        
+        // Handle TXT output format by extracting the inner text of the HTML document and creating a Blob for download
+        if (item.outputFmt === 'txt') {
+            const out = (doc.body.innerText || doc.body.textContent || '').trim();
+            item.downloadUrl  = URL.createObjectURL(new Blob([out], { type: 'text/plain' }));
+            item.downloadName = item.name.replace(/\.html?$/i, '.txt');
+        }
+
+        // Convert to Markdown using Turndown.js for other output formats
+        else {
+            await ensureLib('https://unpkg.com/turndown/dist/turndown.js');
+            const td = new TurndownService();
+            const out = td.turndown(doc.body.innerHTML);
+            item.downloadUrl  = URL.createObjectURL(new Blob([out], { type: 'text/markdown' }));
+            item.downloadName = item.name.replace(/\.html?$/i, '.md');
+        }
+        markDone(item);
+    }
+
+    // Converts a Markdown file to HTML using the Marked.js library, creating a simple HTML page with basic styling
+    async function cvMarkdown(item) {
+        await ensureLib('https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js');
+        const text = await item.file.text();
+        const html = marked.parse(text);
+        const out = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.6}pre{background:#f4f4f4;padding:12px;border-radius:4px;overflow-x:auto}code{background:#f4f4f4;padding:2px 4px;border-radius:3px}blockquote{border-left:4px solid #ccc;margin:0;padding-left:16px;color:#666}</style></head><body>${html}</body></html>`;
+        item.downloadUrl  = URL.createObjectURL(new Blob([out], { type: 'text/html' }));
+        item.downloadName = item.name.replace(/\.(md|markdown)$/i, '.html');
+        markDone(item);
+    }
+
+    // Converts a plain text file to either HTML or Markdown format, creating a simple HTML page or a Markdown file based on the user's selection
+    async function cvTxt(item) {
+        // Read the text file as a string and escape special HTML characters for safe rendering
+        const text = await item.file.text();
+        const xmlE = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+        // Convert to HTML by wrapping the text in a simple HTML structure with basic styling
+        if (item.outputFmt === 'html') {
+            const out = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><pre style="white-space:pre-wrap;word-wrap:break-word;font-family:monospace">${xmlE(text)}</pre></body></html>`;
+            item.downloadUrl  = URL.createObjectURL(new Blob([out], { type: 'text/html' }));
+            item.downloadName = item.name.replace(/\.txt$/i, '.html');
+        }
+        
+        // Convert to Markdown by simply saving the text as a .md file
+        else {
+            item.downloadUrl  = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }));
+            item.downloadName = item.name.replace(/\.txt$/i, '.md');
+        }
+        markDone(item);
+    }
+
+    // Converts an RTF file to plain text by stripping RTF control words and formatting, creating a simple TXT file for download
+    async function cvRtf(item) {
+        const text = await item.file.text();
+        const stripped = text
+            .replace(/\{\\[^{}]+\}/g, '')
+            .replace(/\\[a-z]+\d*\s?/gi, '')
+            .replace(/[\\{}]/g, '')
+            .replace(/\r\n|\r/g, '\n').trim();
+        item.downloadUrl  = URL.createObjectURL(new Blob([stripped], { type: 'text/plain' }));
+        item.downloadName = item.name.replace(/\.[^.]+$/, '.txt');
+        markDone(item);
+    }
+
+    // Converts an EPUB file to either plain text or HTML by extracting the content from the EPUB's ZIP structure, reading the spine order from the OPF file, and concatenating the text from each chapter
+    async function cvEpub(item) {
+        // Load JSZip library from CDN to read the EPUB file's ZIP structure
+        await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+        const ab = await item.file.arrayBuffer();
+        const zip = await JSZip.loadAsync(ab);
+
+        // Read spine order from OPF
+        let chapters = [];
+
+        // Read the container.xml file to find the path to the OPF file, then read the OPF file to get the spine order of chapters
+        try {
+            const containerXml = await zip.file('META-INF/container.xml').async('text');
+            const opfPath = containerXml.match(/full-path="([^"]+\.opf)"/)?.[1] || '';
+            const opfDir  = opfPath.split('/').slice(0, -1).join('/');
+            if (opfPath) {
+                const opf = await zip.file(opfPath).async('text');
+                const opfDoc = new DOMParser().parseFromString(opf, 'text/xml');
+                const manifest = {};
+                opfDoc.querySelectorAll('item').forEach(el => { manifest[el.getAttribute('id')] = el.getAttribute('href'); });
+                opfDoc.querySelectorAll('itemref').forEach(el => {
+                    const href = manifest[el.getAttribute('idref')];
+                    if (href) chapters.push(opfDir ? `${opfDir}/${href}` : href);
+                });
+            }
+        } catch {}
+        if (!chapters.length) {
+            chapters = Object.keys(zip.files).filter(f => /\.(html?|xhtml?)$/i.test(f)).sort();
+        }
+
+        // Extract text from each chapter and concatenate it into a single array of texts
+        const texts = [];
+        for (const ch of chapters) {
+            const f = zip.file(ch) || zip.file(decodeURIComponent(ch));
+            if (!f) continue;
+            const content = await f.async('text');
+            const doc = new DOMParser().parseFromString(content, 'text/html');
+            const text = (doc.body?.innerText || doc.body?.textContent || '').trim();
+            if (text) texts.push(text);
+        }
+
+        // Create a download URL for the output format (TXT or HTML) based on the user's selection
+        if (item.outputFmt === 'txt') {
+            item.downloadUrl  = URL.createObjectURL(new Blob([texts.join('\n\n---\n\n')], { type: 'text/plain' }));
+            item.downloadName = item.name.replace(/\.epub$/i, '.txt');
+        } else {
+            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.7}hr{opacity:0.3}</style></head><body>${
+                texts.map(t => `<p>${t.replace(/\n/g,'<br>')}</p>`).join('<hr>')
+            }</body></html>`;
+            item.downloadUrl  = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+            item.downloadName = item.name.replace(/\.epub$/i, '.html');
+        }
+        markDone(item);
+    }
+
+    // Converts an ODT file to plain text by extracting the content from the ODT's ZIP structure and reading the text from the content.xml file
+    async function cvOdt(item) {
+        // Load JSZip library from CDN to read the ODT file's ZIP structure
+        await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+
+        // Read the ODT file as an ArrayBuffer and load it as a ZIP file using JSZip
+        const ab = await item.file.arrayBuffer();
+        const zip = await JSZip.loadAsync(ab);
+
+        // Read the content.xml file from the ODT ZIP structure and parse it as XML
+        const contentXml = await zip.file('content.xml').async('text');
+        const doc = new DOMParser().parseFromString(contentXml, 'text/xml');
+        const paras = [];
+
+        // Extract text from paragraphs and headings in the content.xml file, concatenating them into a single array of texts
+        doc.querySelectorAll('text\\:p, text\\:h, p, h').forEach(el => {
+            const t = el.textContent.trim();
+            if (t) paras.push(t);
+        });
+
+        // Create a download URL for the output format (TXT) based on the extracted paragraphs
+        item.downloadUrl  = URL.createObjectURL(new Blob([paras.join('\n\n')], { type: 'text/plain' }));
+        item.downloadName = item.name.replace(/\.odt$/i, '.txt');
+        markDone(item);
+    }
+
+    // Builds a DOCX file from an array of paragraphs, creating the necessary XML structure and packaging it into a ZIP file using JSZip
+    async function buildDocx(paragraphs) {
+        // Escape special XML characters in the paragraphs to ensure valid XML structure
+        const x = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const ps = paragraphs.filter(p => p.trim()).map(p =>
+            `<w:p><w:r><w:t xml:space="preserve">${x(p)}</w:t></w:r></w:p>`
+        ).join('');
+        const z = new JSZip();
+
+        // Create the necessary DOCX structure and files, including [Content_Types].xml, _rels/.rels, word/_rels/document.xml.rels, and word/document.xml
+        z.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
+        z.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
+        z.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`);
+        z.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${ps}<w:sectPr/></w:body></w:document>`);
+        return z.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    }
+
+    // ── Data ──────────────────────────────────────────────────────────────────────
+    const SHEETJS = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+
+    // Converts data files (CSV, TSV, JSON, XLSX) between different formats using SheetJS for spreadsheet handling and custom functions for subtitle conversion
+    async function convertData(item) {
+        // Handle subtitle files (SRT, VTT) and convert them to the desired output format (VTT, TXT, SRT)
+        if (item.ext === 'srt' || item.ext === 'vtt') {
+            const text = await item.file.text();
+            let out, ext, mime;
+            if (item.ext === 'srt' && item.outputFmt === 'vtt') { out = srtToVtt(text); ext = 'vtt'; mime = 'text/vtt'; }
+            else if (item.ext === 'srt' && item.outputFmt === 'txt') { out = subtitleToTxt(text, 'srt'); ext = 'txt'; mime = 'text/plain'; }
+            else if (item.ext === 'vtt' && item.outputFmt === 'srt') { out = vttToSrt(text); ext = 'srt'; mime = 'application/x-subrip'; }
+            else { out = subtitleToTxt(text, 'vtt'); ext = 'txt'; mime = 'text/plain'; }
+            item.downloadUrl  = URL.createObjectURL(new Blob([out], { type: mime }));
+            item.downloadName = item.name.replace(/\.[^.]+$/, '.'+ext);
+            markDone(item); return;
+        }
+
+        // Determine if the input file is a spreadsheet format (XLSX, XLS, ODS) and if the output format is XLSX
+        const isSpreadsheet = ['xlsx','xls','ods'].includes(item.ext);
+        const toXlsx = item.outputFmt === 'xlsx';
+
+        // Spreadsheet → PDF (server-side LibreOffice)
+        if (isSpreadsheet && item.outputFmt === 'pdf') { await convertDocumentServer(item); return; }
+
+        // Spreadsheet → CSV / JSON (SheetJS read)
+        if (isSpreadsheet) {
+            await ensureLib(SHEETJS);
+            const ab  = await item.file.arrayBuffer();
+            const wb  = XLSX.read(new Uint8Array(ab), { type: 'array' });
+            const ws  = wb.Sheets[wb.SheetNames[0]];
+            let out, ext, mime;
+            if (item.outputFmt === 'csv') {
+                out = XLSX.utils.sheet_to_csv(ws);
+                ext = 'csv'; mime = 'text/csv';
+            } else {
+                out = JSON.stringify(XLSX.utils.sheet_to_json(ws, { defval: '' }), null, 2);
+                ext = 'json'; mime = 'application/json';
+            }
+            item.downloadUrl  = URL.createObjectURL(new Blob([out], { type: mime }));
+            item.downloadName = item.name.replace(/\.[^.]+$/, '.'+ext);
+            markDone(item); return;
+        }
+
+        // CSV / JSON → XLSX (SheetJS write)
+        if (toXlsx) {
+            await ensureLib(SHEETJS);
+            const text = await item.file.text();
+            const data = item.ext === 'csv' ? csvToJson(text) : (() => { const p = JSON.parse(text); return Array.isArray(p) ? p : [p]; })();
+            const ws   = XLSX.utils.json_to_sheet(data);
+            const wb   = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+            const buf  = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            item.downloadUrl  = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+            item.downloadName = item.name.replace(/\.[^.]+$/, '.xlsx');
+            markDone(item); return;
+        }
+
+        // Handle CSV / TSV / JSON conversions using custom functions for parsing and formatting
+        const text = await item.file.text();
+        let out, ext, mime;
+
+        // CSV / TSV / JSON conversions
+        if (item.ext === 'csv' && item.outputFmt === 'json') { // Convert CSV to JSON
+            out = JSON.stringify(csvToJson(text), null, 2);
+            ext = 'json'; mime = 'application/json';
+        }
+        else if (item.ext === 'csv' && item.outputFmt === 'tsv') { // Convert CSV to TSV
+            const rows = csvToJson(text);
+            const keys = rows.length ? Object.keys(rows[0]) : [];
+            const san = v => String(v ?? '').replace(/\t/g, ' ');
+            out = [keys.join('\t'), ...rows.map(r => keys.map(k => san(r[k])).join('\t'))].join('\n');
+            ext = 'tsv'; mime = 'text/tab-separated-values';
+        }
+        else if (item.ext === 'tsv' && item.outputFmt === 'csv') { // Convert TSV to CSV
+            const rows = tsvToRows(text);
+            const q = v => (v.includes(',') || v.includes('"') || v.includes('\n')) ? `"${v.replace(/"/g,'""')}"` : v;
+            out = rows.map(r => r.map(q).join(',')).join('\n');
+            ext = 'csv'; mime = 'text/csv';
+        }
+        else if (item.ext === 'tsv' && item.outputFmt === 'json') { // Convert TSV to JSON
+            const rows = tsvToRows(text);
+            if (!rows.length) { out = '[]'; ext = 'json'; mime = 'application/json'; }
+            else {
+                const headers = rows[0];
+                const data = rows.slice(1).filter(r => r.some(c => c)).map(r => {
+                    const obj = {}; headers.forEach((h, i) => obj[h] = r[i] || ''); return obj;
+                });
+                out = JSON.stringify(data, null, 2); ext = 'json'; mime = 'application/json';
+            }
+        }
+        else if (item.ext === 'json' && item.outputFmt === 'csv') { // Convert JSON to CSV
+            out = jsonToCsv(JSON.parse(text));
+            ext = 'csv'; mime = 'text/csv';
+        }
+        else if (item.ext === 'json' && item.outputFmt === 'yaml') { // Convert JSON to YAML
+            await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js');
+            out = jsyaml.dump(JSON.parse(text));
+            ext = 'yaml'; mime = 'text/yaml';
+        }
+        else if (item.ext === 'json' && item.outputFmt === 'xml') { // Convert JSON to XML
+            out = jsonToXml(JSON.parse(text));
+            ext = 'xml'; mime = 'application/xml';
+        }
+        else if (item.ext === 'json' && item.outputFmt === 'toml') { // Convert JSON to TOML
+            out = jsonToToml(JSON.parse(text));
+            ext = 'toml'; mime = 'application/toml';
+        }
+        else if ((item.ext === 'yaml' || item.ext === 'yml') && item.outputFmt === 'json') { // Convert YAML to JSON
+            await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js');
+            out = JSON.stringify(jsyaml.load(text), null, 2);
+            ext = 'json'; mime = 'application/json';
+        }
+        else if (item.ext === 'xml' && item.outputFmt === 'json') { // Convert XML to JSON
+            const doc = new DOMParser().parseFromString(text, 'text/xml');
+            out = JSON.stringify(xmlToObj(doc.documentElement), null, 2);
+            ext = 'json'; mime = 'application/json';
+        }
+        else if (item.ext === 'toml' && item.outputFmt === 'json') { // Convert TOML to JSON
+            out = JSON.stringify(parseToml(text), null, 2);
+            ext = 'json'; mime = 'application/json';
+        }
+        else if ((item.ext === 'ini' || item.ext === 'cfg' || item.ext === 'conf') && item.outputFmt === 'json') { // Convert INI to JSON
+            out = JSON.stringify(parseIni(text), null, 2);
+            ext = 'json'; mime = 'application/json';
+        }
+        else if (item.ext === 'env' && item.outputFmt === 'json') { // Convert ENV to JSON
+            out = JSON.stringify(parseEnvFile(text), null, 2);
+            ext = 'json'; mime = 'application/json';
+        }
+        else if (item.ext === 'properties' && item.outputFmt === 'json') { // Convert Java properties to JSON
+            out = JSON.stringify(parseProperties(text), null, 2);
+            ext = 'json'; mime = 'application/json';
+        }
+        else { // Unsupported conversion
+            throw new Error('Unsupported conversion');
+        }
+
+        // Create a download URL for the converted data and update the item with the appropriate file name and MIME type
+        item.downloadUrl  = URL.createObjectURL(new Blob([out], { type: mime }));
+        item.downloadName = item.name.replace(/\.[^.]+$/, '.'+ext);
+        markDone(item);
+    }
+
+    // Converts a CSV string to a JSON array of objects, handling quoted fields and commas within quotes
+    function csvToJson(csv) {
+        // Parses a single CSV row into an array of values, handling quoted fields and commas within quotes
+        const parseRow = line => {
+            const res = []; let cur = '', inQ = false;
+            for (let i = 0; i < line.length; i++) {
+                const c = line[i];
+                if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+                else if (c === ',' && !inQ) { res.push(cur); cur = ''; }
+                else cur += c;
+            }
+            res.push(cur); return res;
+        };
+
+        // Split the CSV string into lines, parse the header row, and convert each subsequent row into an object using the headers as keys
+        const lines = csv.trim().split('\n');
+        if (!lines.length) return [];
+        const headers = parseRow(lines[0]);
+        return lines.slice(1).filter(l => l.trim()).map(line => {
+            const vals = parseRow(line);
+            const obj = {};
+            headers.forEach((h, i) => obj[h] = vals[i] !== undefined ? vals[i] : '');
+            return obj;
+        });
+    }
+
+    // Converts a JSON object or array to a CSV string, handling commas, quotes, and newlines in values
+    function jsonToCsv(data) {
+        const rows = Array.isArray(data) ? data : [data];
+        if (!rows.length) return '';
+        const keys = Object.keys(rows[0]);
+        const q = v => { const s = String(v ?? ''); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s; };
+        return [keys.join(','), ...rows.map(r => keys.map(k => q(r[k])).join(','))].join('\n');
+    }
+
+    // Converts a JSON object to an XML string, recursively handling nested objects and arrays, and escaping special characters
+    function jsonToXml(obj, tag = 'root', indent = 0) {
+        const pad = '  '.repeat(indent);
+        const esc2 = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        if (Array.isArray(obj))               return obj.map(v => jsonToXml(v, 'item', indent)).join('\n');
+        if (typeof obj !== 'object' || !obj)  return `${pad}<${tag}>${esc2(obj)}</${tag}>`;
+        const inner = Object.entries(obj).map(([k, v]) => jsonToXml(v, k, indent+1)).join('\n');
+        return `${pad}<${tag}>\n${inner}\n${pad}</${tag}>`;
+    }
+
+    // Converts an XML node to a JavaScript object, recursively handling child nodes and text content, and preserving the structure of the XML
+    function xmlToObj(node) {
+        if (node.nodeType === 3) return node.textContent.trim();
+        const kids = Array.from(node.childNodes).filter(n => n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim()));
+        if (!kids.length) return node.textContent;
+        const obj = {};
+        kids.forEach(c => {
+            if (c.nodeType === 3) return;
+            const v = xmlToObj(c);
+            obj[c.nodeName] = obj[c.nodeName] !== undefined
+                ? (Array.isArray(obj[c.nodeName]) ? [...obj[c.nodeName], v] : [obj[c.nodeName], v])
+                : v;
+        });
+        return obj;
+    }
+
+    // ── TSV helpers ───────────────────────────────────────────────────────────────
+    // Converts a TSV string to an array of rows, where each row is an array of trimmed cell values
+    function tsvToRows(tsv) {
+        return tsv.trim().split('\n').map(l => l.split('\t').map(c => c.trim()));
+    }
+
+    // ── Config parsers ────────────────────────────────────────────────────────────
+    // Parses an INI string into a JavaScript object, handling sections and key-value pairs, and ignoring comments and empty lines
+    function parseIni(text) {
+        const obj = {}, root = {};
+        let section = '_root'; obj['_root'] = root;
+        for (const raw of text.split('\n')) {
+            const line = raw.trim();
+            if (!line || line[0] === ';' || line[0] === '#') continue;
+            const sec = line.match(/^\[(.+)\]$/);
+            if (sec) { section = sec[1]; if (!obj[section]) obj[section] = {}; continue; }
+            const eq = line.indexOf('=');
+            if (eq < 0) continue;
+            const k = line.slice(0, eq).trim();
+            let v = line.slice(eq + 1).trim();
+            if (v.length >= 2 && ((v[0] === '"' && v[v.length-1] === '"') || (v[0] === "'" && v[v.length-1] === "'"))) v = v.slice(1,-1);
+            obj[section][k] = v;
+        }
+        if (!Object.keys(root).length) delete obj['_root'];
+        return obj;
+    }
+
+    // Parses a TOML string into a JavaScript object, handling tables, arrays of tables, and key-value pairs, while ignoring comments and empty lines
+    function parseToml(text) {
+        const obj = {};
+        let target = obj;
+        for (const raw of text.split('\n')) {
+            const line = raw.trim();
+            if (!line || line[0] === '#') continue;
+            const arrTable = line.match(/^\[\[(.+)\]\]$/);
+            if (arrTable) { const k = arrTable[1]; if (!obj[k]) obj[k] = []; target = {}; obj[k].push(target); continue; }
+            const secMatch = line.match(/^\[(.+)\]$/);
+            if (secMatch) { target = obj; for (const p of secMatch[1].split('.')) { if (!target[p]) target[p] = {}; target = target[p]; } continue; }
+            const eq = line.indexOf('=');
+            if (eq < 0) continue;
+            const key = line.slice(0, eq).trim();
+            let val = line.slice(eq + 1).trim().split(' #')[0].trim();
+            if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1,-1).replace(/\\n/g,'\n').replace(/\\t/g,'\t');
+            else if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1,-1);
+            else if (val === 'true') val = true;
+            else if (val === 'false') val = false;
+            else if (val !== '' && !isNaN(val)) val = Number(val);
+            target[key] = val;
+        }
+        return obj;
+    }
+
+    // Converts a JavaScript object to a TOML string, handling nested objects, arrays of objects, and scalar values, while preserving the structure of the data
+    function jsonToToml(obj, prefix) {
+        let out = '';
+        const scalars = {}, tables = {}, arrays = {};
+        for (const [k, v] of Object.entries(obj)) {
+            if (v === null || v === undefined) continue;
+            if (Array.isArray(v) && v.length && typeof v[0] === 'object') arrays[k] = v;
+            else if (typeof v === 'object' && !Array.isArray(v)) tables[k] = v;
+            else scalars[k] = v;
+        }
+        for (const [k, v] of Object.entries(scalars))
+            out += `${k} = ${typeof v === 'string' ? JSON.stringify(v) : v}\n`;
+        for (const [k, v] of Object.entries(tables)) {
+            const full = prefix ? `${prefix}.${k}` : k;
+            out += `\n[${full}]\n` + jsonToToml(v, full);
+        }
+        for (const [k, v] of Object.entries(arrays)) {
+            const full = prefix ? `${prefix}.${k}` : k;
+            for (const item of v) out += `\n[[${full}]]\n` + jsonToToml(item, full);
+        }
+        return out;
+    }
+
+    // Parses an ENV file into a JavaScript object, handling key-value pairs and ignoring comments and empty lines
+    function parseEnvFile(text) {
+        const obj = {};
+        for (const raw of text.split('\n')) {
+            const line = raw.trim();
+            if (!line || line[0] === '#') continue;
+            const eq = line.indexOf('=');
+            if (eq < 0) continue;
+            const k = line.slice(0, eq).trim();
+            let v = line.slice(eq + 1).trim();
+            if (v.length >= 2 && ((v[0] === '"' && v[v.length-1] === '"') || (v[0] === "'" && v[v.length-1] === "'"))) v = v.slice(1,-1);
+            obj[k] = v;
+        }
+        return obj;
+    }
+
+    // Parses a Java properties file into a JavaScript object, handling key-value pairs and ignoring comments and empty lines
+    function parseProperties(text) {
+        const obj = {};
+        for (const raw of text.split('\n')) {
+            const line = raw.trim();
+            if (!line || line[0] === '#' || line[0] === '!') continue;
+            const sep = line.search(/[=:]/);
+            if (sep < 0) continue;
+            obj[line.slice(0, sep).trim()] = line.slice(sep + 1).trim();
+        }
+        return obj;
+    }
+
+    // ── Subtitle converters ───────────────────────────────────────────────────────
+    // Converts SRT subtitle format to VTT format by replacing commas with periods in timestamps and adding the WEBVTT header
+    function srtToVtt(srt) {
+        return 'WEBVTT\n\n' + srt.replace(/\r\n/g, '\n').trim()
+            .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+    }
+
+    // Converts VTT subtitle format to SRT format by removing the WEBVTT header, converting timestamps, and formatting the output with numbered blocks
+    function vttToSrt(vtt) {
+        let body = vtt.replace(/\r\n/g, '\n').replace(/^WEBVTT[^\n]*/m, '').trim();
+        body = body.replace(/^(STYLE|NOTE|REGION)[^\n]*(\n(?!\n).*)*/mg, '').trim();
+        body = body.replace(/(\d{2}:\d{2}:\d{2})\.(\d{3})/g, '$1,$2');
+        body = body.replace(/<[^>]+>/g, '');
+        return body.trim().split(/\n\n+/)
+            .filter(b => b.includes('-->'))
+            .map((block, i) => {
+                const lines = block.trim().split('\n');
+                if (!lines[0].includes('-->')) lines.shift();
+                return `${i + 1}\n${lines.join('\n')}`;
+            }).join('\n\n') + '\n';
+    }
+
+    // Converts subtitle text to plain text by removing timestamps, HTML tags, and extra whitespace, depending on the input format (SRT or VTT)
+    function subtitleToTxt(text, fmt) {
+        if (fmt === 'srt') {
+            return text.replace(/\r\n/g, '\n').trim()
+                .replace(/^\d+\s*\n/mg, '')
+                .replace(/\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\s*\n/g, '')
+                .replace(/<[^>]+>/g, '').replace(/\n{3,}/g, '\n\n').trim();
+        }
+        return text.replace(/\r\n/g, '\n').replace(/^WEBVTT[^\n]*/m, '')
+            .replace(/\d{2}:\d{2}:\d{2}\.\d{3}.*-->.*\n/g, '').replace(/<[^>]+>/g, '')
+            .replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    // ── Image → PDF (jsPDF) ───────────────────────────────────────────────────────
+    // Converts an image file (JPEG, PNG, SVG) to a PDF using the jsPDF library, creating a single-page PDF with the image centered and scaled to fit the page
+    async function imageToPdf(item) {
+        // Load the jsPDF library from CDN to create a PDF document
+        await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        const { jsPDF } = window.jspdf;
+
+        // Create an image element and load the image file, handling SVG files by converting them to a data URL
+        let imgSrc;
+        if (item.ext === 'svg') {
+            const text = await item.file.text();
+            imgSrc = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(text)));
+        } else {
+            imgSrc = URL.createObjectURL(item.file);
+        }
+        const img = await new Promise((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i);
+            i.onerror = () => rej(new Error('Could not decode image'));
+            i.src = imgSrc;
+        });
+        if (item.ext !== 'svg') URL.revokeObjectURL(imgSrc);
+
+        // Determine the natural width and height of the image, defaulting to 800x600 if not available, and create a canvas to draw the image onto
+        const w = img.naturalWidth  || 800;
+        const h = img.naturalHeight || 600;
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0);
+
+        // Create a new jsPDF document with the appropriate orientation and size, add the image to the PDF, and generate a download URL for the PDF file
+        const pdf = new jsPDF({ orientation: w > h ? 'landscape' : 'portrait', unit: 'px', format: [w, h] });
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, w, h);
+        item.downloadUrl  = URL.createObjectURL(pdf.output('blob'));
+        item.downloadName = item.name.replace(/\.[^.]+$/, '.pdf');
+        markDone(item);
+    }
+
+    // ── Download All ──────────────────────────────────────────────────────────────
+    // Downloads all converted files as a single ZIP archive using JSZip, creating a download link for the user to save the ZIP file
+    async function downloadAll() {
+        const done = items.filter(x => x.status === 'done' && x.downloadUrl);
+        if (done.length < 2) return;
+        await ensureLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+        const zip = new JSZip();
+        await Promise.all(done.map(async item => {
+            const blob = await fetch(item.downloadUrl).then(r => r.blob());
+            zip.file(item.downloadName, blob);
+        }));
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'converted_files.zip';
+        a.click();
+    }
+</script>

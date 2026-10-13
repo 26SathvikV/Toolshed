@@ -1,0 +1,169 @@
+name: Build Release
+
+# Triggered by a version tag push (e.g. git tag v1.0.0 && git push --tags).
+# workflow_dispatch lets you test the compile + package steps from the Actions
+# tab without a tag. The upload step is skipped when there is no tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required to upload files to a GitHub Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            pkg_target: node18-win-x64
+            artifact:   Toolshed-Windows.exe
+
+          - os: macos-latest
+            pkg_target: node18-macos-x64
+            artifact:   Toolshed-macOS
+
+          - os: ubuntu-latest
+            pkg_target: node18-linux-x64
+            artifact:   Toolshed-Linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      # ------------------------------------------------------------------ #
+      # 1. Source
+      # ------------------------------------------------------------------ #
+      - uses: actions/checkout@v5
+
+      # ------------------------------------------------------------------ #
+      # 2. Node.js
+      # ------------------------------------------------------------------ #
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # ------------------------------------------------------------------ #
+      # 3. Dependencies
+      # ------------------------------------------------------------------ #
+      - name: Install dependencies
+        run: npm ci
+
+      # ------------------------------------------------------------------ #
+      # 3b. Boxedwine web build (emulator support)
+      #     Add the download URL for the Boxedwine web release zip as a
+      #     repo secret named BOXEDWINE_URL (Settings > Secrets).
+      #     The zip must contain boxedwine.js and boxedwine.wasm.
+      #     Download from: https://github.com/danoon2/Boxedwine/releases
+      # ------------------------------------------------------------------ #
+      - name: Download Boxedwine web files (emulator support)
+        shell: bash
+        env:
+          BOXEDWINE_URL: ${{ secrets.BOXEDWINE_URL }}
+        run: |
+          mkdir -p public/boxedwine
+          if [ -n "$BOXEDWINE_URL" ]; then
+            curl -fL "$BOXEDWINE_URL" -o /tmp/boxedwine-web.zip
+            # Extract full directory structure (SingleThreaded/, MultiThreaded/, Wine11/, etc.)
+            unzip /tmp/boxedwine-web.zip -d /tmp/boxedwine-extract
+            cp -r /tmp/boxedwine-extract/. public/boxedwine/
+            echo "Boxedwine installed: $(ls public/boxedwine/)"
+          else
+            echo "BOXEDWINE_URL secret not set - emulator shows setup instructions at runtime"
+          fi
+
+      # ------------------------------------------------------------------ #
+      # 4. Bundle into a single standalone executable with pkg
+      #    Assets (views/, public/) are embedded so no separate folder is
+      #    needed alongside the binary.  The user only needs a .env file.
+      # ------------------------------------------------------------------ #
+      - name: Install pkg
+        run: npm install -g @vercel/pkg
+
+      - name: Build standalone executable
+        shell: bash
+        run: |
+          mkdir -p dist
+          pkg . --target ${{ matrix.pkg_target }} --output dist/${{ matrix.artifact }}
+
+      # ------------------------------------------------------------------ #
+      # 5. Code-sign the artifact (optional, silently skipped if the
+      #    required secrets are not set in repo Settings > Secrets).
+      #
+      #  Windows: needs a code-signing certificate (.pfx) from any
+      #    trusted CA (DigiCert, Sectigo, etc.).  Store in secrets as:
+      #      WINDOWS_CERT_PFX       base64-encoded .pfx file
+      #      WINDOWS_CERT_PASSWORD  password for the .pfx
+      #    To base64-encode:  certutil -encode cert.pfx cert.b64
+      #
+      #  macOS: needs an Apple Developer ID Application certificate
+      #    and an app-specific password for notarization.  Store as:
+      #      APPLE_CERT_P12         base64-encoded .p12 export of the cert
+      #      APPLE_CERT_PASSWORD    password used when exporting the .p12
+      #      APPLE_ID               your Apple ID email
+      #      APPLE_APP_PASSWORD     app-specific password (appleid.apple.com)
+      #      APPLE_TEAM_ID          10-char team ID from developer.apple.com
+      #    To base64-encode:  base64 -i cert.p12 | pbcopy
+      # ------------------------------------------------------------------ #
+      - name: Sign artifact (Windows)
+        if: runner.os == 'Windows'
+        env:
+          PFX_DATA: ${{ secrets.WINDOWS_CERT_PFX }}
+          PFX_PASS: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        shell: powershell
+        run: |
+          if (-not $env:PFX_DATA) {
+            Write-Host "WINDOWS_CERT_PFX not set -- skipping code signing"
+            exit 0
+          }
+          $bytes = [Convert]::FromBase64String($env:PFX_DATA)
+          [IO.File]::WriteAllBytes('cert.pfx', $bytes)
+          $signtool = Get-ChildItem -Recurse "C:\Program Files (x86)\Windows Kits\10\bin" `
+            -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          & $signtool sign /f cert.pfx /p $env:PFX_PASS `
+            /tr http://timestamp.digicert.com /td sha256 /fd sha256 `
+            /n "Sathvik Vemulapalli" `
+            "dist\${{ matrix.artifact }}"
+          Remove-Item cert.pfx
+
+      - name: Sign and notarize artifact (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CERT_P12:       ${{ secrets.APPLE_CERT_P12 }}
+          CERT_PASSWORD:  ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_ID:       ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASS: ${{ secrets.APPLE_APP_PASSWORD }}
+          TEAM_ID:        ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$CERT_P12" ]; then
+            echo "APPLE_CERT_P12 not set -- skipping code signing"
+            exit 0
+          fi
+          echo "$CERT_P12" | base64 --decode > cert.p12
+          security create-keychain -p "" build.keychain
+          security import cert.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -s build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          codesign --force --sign "Developer ID Application: Sathvik Vemulapalli ($TEAM_ID)" \
+            --options runtime --timestamp "dist/${{ matrix.artifact }}"
+          ditto -c -k --keepParent "dist/${{ matrix.artifact }}" dist/notarize.zip
+          xcrun notarytool submit dist/notarize.zip \
+            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASS" \
+            --team-id "$TEAM_ID" --wait
+          rm dist/notarize.zip cert.p12
+          security delete-keychain build.keychain
+
+      # ------------------------------------------------------------------ #
+      # 6. Attach to the GitHub Release created by the tag push.
+      #    Skipped on workflow_dispatch runs (no tag, no release to attach).
+      # ------------------------------------------------------------------ #
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.artifact }}

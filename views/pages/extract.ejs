@@ -1,0 +1,441 @@
+<!--
+    Extract Archive Page
+    This page allows users to extract and browse the contents of various archive formats directly in the browser using libarchive.js (WASM) and fflate (for ZIP fallback).
+-->
+
+<!-- Extract Archive Page Styles -->
+<style>
+    /* ── Drop zone ────────────────────────────────────────────────────────────── */
+    .ex-drop {
+        border: 2px dashed var(--form-border-color);
+        border-radius: 10px; padding: 60px 40px;
+        text-align: center; cursor: pointer;
+        background: var(--form-bg-color);
+        transition: border-color 0.2s, background 0.2s;
+    }
+    .ex-drop.drag-over { border-color: var(--link-color); background: rgba(140,136,243,0.05); }
+    #archiveInput { display: none; }
+
+    /* ── Archive info ─────────────────────────────────────────────────────────── */
+    #archiveResult { margin-top: 24px; }
+
+    .arch-header {
+        background: var(--form-bg-color);
+        border: 1px solid var(--form-border-color);
+        border-radius: 10px; padding: 16px 20px; margin-bottom: 12px;
+        display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+    }
+    .arch-name  { font-size: 1rem; font-weight: bold; color: var(--heading-color); word-break: break-all; flex: 1; min-width: 160px; }
+    .arch-meta  { font-size: 0.8rem; color: var(--link-color); white-space: nowrap; }
+
+    /* ── File tree ────────────────────────────────────────────────────────────── */
+    .file-tree {
+        background: var(--code-bg-color);
+        border: 1px solid var(--form-border-color);
+        border-radius: 8px; overflow: hidden;
+    }
+    .ft-row {
+        display: flex; align-items: center; gap: 0;
+        padding: 0; border-bottom: 1px solid var(--form-border-color);
+        font-size: 0.82rem; font-family: 'Courier New', monospace;
+        transition: background 0.1s;
+    }
+    .ft-row:last-child { border-bottom: none; }
+    .ft-row:hover { background: var(--form-bg-color); }
+    .ft-row.is-dir { color: var(--heading-color); font-weight: bold; }
+    .ft-icon { padding: 7px 10px; flex-shrink: 0; width: 28px; text-align: center; }
+    .ft-name { flex: 1; padding: 7px 0; word-break: break-all; color: var(--text-color); min-width: 0; }
+    .ft-size { padding: 7px 14px; color: var(--link-color); font-size: 0.72rem; white-space: nowrap; flex-shrink: 0; }
+    .ft-dl   { padding: 7px 12px; flex-shrink: 0; }
+    .ft-dl button {
+        background: transparent; border: 1px solid var(--form-border-color);
+        color: var(--link-color); font-size: 0.68rem; padding: 2px 8px;
+        border-radius: 3px; cursor: pointer;
+    }
+    .ft-dl button:hover { background: var(--form-bg-color); }
+
+    /* ── Toolbar ──────────────────────────────────────────────────────────────── */
+    .arch-toolbar {
+        display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+    .arch-toolbar input[type="search"] {
+        flex: 1; min-width: 140px; padding: 6px 10px; font-size: 0.82rem;
+        border: 1px solid var(--form-border-color);
+        background: var(--form-bg-color); color: var(--text-color);
+        border-radius: 5px;
+    }
+    .arch-sort-label { font-size: 0.78rem; color: var(--link-color); white-space: nowrap; }
+
+    /* ── Unsupported notice ───────────────────────────────────────────────────── */
+    .unsupported-note {
+        background: var(--code-bg-color); border: 1px solid var(--form-border-color);
+        border-radius: 6px; padding: 10px 14px; font-size: 0.8rem;
+        color: var(--link-color); margin-top: 10px;
+    }
+
+    /* ── Format chips ─────────────────────────────────────────────────────────── */
+    .fmt-grid {
+        display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;
+    }
+    .fmt-chip {
+        background: var(--code-bg-color); border: 1px solid var(--form-border-color);
+        color: var(--text-color); font-size: 0.72rem; font-family: 'Courier New', monospace;
+        padding: 2px 9px; border-radius: 3px;
+    }
+
+    /* ── Responsive ───────────────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+        .ex-drop { padding: 36px 16px; }
+        .ft-size, .ft-dl { display: none; }
+        .ft-name { padding-right: 10px; }
+    }
+</style>
+
+<!-- Extract Archive Content -->
+
+<!-- Page Header -->
+<h2 style="text-align:center">Extract Archive Files</h2>
+<p style="text-align:center;color:var(--link-color);margin-bottom:24px">
+    View the contents of ZIP, TAR, 7-Zip, RAR, CAB, and
+    <a id="fmtToggle" href="#" onclick="toggleFormats(event)" style="color:var(--link-color)">more</a>.
+</p>
+
+<!-- Supported Formats List -->
+<div id="fmtList" style="display:none;margin-bottom:20px">
+    <strong style="font-size:0.85rem">Supported formats</strong>
+    <div class="fmt-grid">
+        <span class="fmt-chip">.zip</span><span class="fmt-chip">.tar</span>
+        <span class="fmt-chip">.tar.gz / .tgz</span><span class="fmt-chip">.tar.bz2 / .tbz2</span>
+        <span class="fmt-chip">.tar.xz / .txz</span><span class="fmt-chip">.tar.zst</span>
+        <span class="fmt-chip">.tar.lz4</span><span class="fmt-chip">.tar.lzma</span>
+        <span class="fmt-chip">.gz</span><span class="fmt-chip">.bz2</span>
+        <span class="fmt-chip">.xz</span><span class="fmt-chip">.zst</span>
+        <span class="fmt-chip">.lz4</span><span class="fmt-chip">.lzma</span>
+        <span class="fmt-chip">.7z</span><span class="fmt-chip">.rar (v4)</span>
+        <span class="fmt-chip">.cab</span><span class="fmt-chip">.ar / .a / .deb / .ipk</span>
+        <span class="fmt-chip">.iso</span><span class="fmt-chip">.lha / .lzh</span>
+        <span class="fmt-chip">.cpio</span><span class="fmt-chip">.xar</span>
+        <span class="fmt-chip">.rpm</span><span class="fmt-chip">.shar</span>
+        <span class="fmt-chip">.warc</span><span class="fmt-chip">.mtree</span>
+    </div>
+    <div class="unsupported-note" style="margin-top:8px">
+        Not supported: <code>.lrzip</code>, <code>.ace</code>, <code>.arj</code>, <code>.zoo</code>,
+        <code>.rar v5+</code> (RAR5 encryption), as these use proprietary algorithms not in libarchive.
+    </div>
+</div>
+
+<!-- Drop zone for archive upload -->
+<div class="ex-drop" id="exDrop" onclick="document.getElementById('archiveInput').click()">
+    <div style="font-size:1.1rem;color:var(--heading-color);margin-bottom:6px">Drop archive file here</div>
+    <div style="font-size:0.85rem;color:var(--link-color)">or click to browse</div>
+    <input type="file" id="archiveInput"
+           accept=".zip,.tar,.gz,.tgz,.bz2,.tbz2,.xz,.txz,.zst,.lz4,.lzma,.7z,.rar,.cab,.ar,.a,.deb,.ipk,.iso,.lha,.lzh,.cpio,.xar,.rpm,.shar,.warc">
+</div>
+
+<!-- Status message & Results -->
+<div id="statusMsg" style="display:none;margin-top:16px;padding:12px 16px;border-radius:8px;font-size:0.85rem;background:var(--code-bg-color);border:1px solid var(--form-border-color);color:var(--link-color)"></div>
+
+<div id="archiveResult" style="display:none">
+    <div class="arch-header">
+        <span class="arch-name" id="archName"></span>
+        <span class="arch-meta" id="archMeta"></span>
+        <button id="dlAllBtn" onclick="downloadAll()" style="font-size:0.78rem;padding:5px 12px">⬇ Download All</button>
+        <button onclick="clearExtract()" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color);font-size:0.78rem;padding:5px 12px">Clear</button>
+    </div>
+
+    <div class="arch-toolbar">
+        <input type="search" id="filterInput" placeholder="Filter files…" oninput="filterTree(this.value)">
+        <span class="arch-sort-label">Sort:</span>
+        <button onclick="sortTree('name')" style="font-size:0.75rem;padding:4px 10px">Name</button>
+        <button onclick="sortTree('size')" style="font-size:0.75rem;padding:4px 10px">Size</button>
+        <button onclick="sortTree('type')" style="font-size:0.75rem;padding:4px 10px">Type</button>
+    </div>
+
+    <div class="file-tree" id="fileTree"></div>
+</div>
+
+<!-- Extract Archive Page Scripts -->
+<script type="module">
+    // Uses libarchive.js, the WASM port of libarchive C library.
+    // Worker served via unpkg CDN; non-module workers allow cross-origin URLs.
+    import { Archive } from 'https://unpkg.com/libarchive.js@1.3.0/dist/libarchive.js';
+
+    // ── Daily archive limit ───────────────────────────────────────────────────────
+    const _EX_PLAN    = '<%= (locals.user && user.plan) ? user.plan : "guest" %>';
+    const _EX_BILLING = '<%- (!locals.monetizationHidden && locals.billingUrl && billingUrl) ? billingUrl : "" %>';
+    const _EX_LIMITS  = { guest: 10, free: 10, pro: 50, studio: null };
+    const _EX_KEY     = 'ts_extract';
+    const _EX_TODAY   = new Date().toISOString().slice(0, 10);
+
+    // Get number of archives extracted today from localStorage
+    function _exUsed() {
+        try {
+            const d = JSON.parse(localStorage.getItem(_EX_KEY) || '{}');
+            return (d.date === _EX_TODAY) ? (d.count || 0) : 0;
+        } catch { return 0; }
+    }
+    // Increment the count of archives extracted today in localStorage
+    function _exIncrement() {
+        try {
+            const d = JSON.parse(localStorage.getItem(_EX_KEY) || '{}');
+            const count = (d.date === _EX_TODAY ? (d.count || 0) : 0) + 1;
+            localStorage.setItem(_EX_KEY, JSON.stringify({ date: _EX_TODAY, count }));
+        } catch {}
+    }
+
+    // ── Global state ─────────────────────────────────────────────────────────────
+    let archiveEntries = [];  // { path, size, isDir }
+    let archiveObjMap  = {};  // path → File/Blob for download
+    let currentSort    = 'name';
+    let sortAsc        = true;
+    let archiveName    = '';
+    let totalSize      = 0;
+
+    const statusMsg = document.getElementById('statusMsg');
+
+    function status(msg, isErr) {
+        statusMsg.style.display = 'block';
+        statusMsg.textContent   = msg;
+        statusMsg.style.color   = isErr ? '#ff6b6b' : 'var(--link-color)';
+    }
+
+    function clearStatus() { statusMsg.style.display = 'none'; }
+
+    // Init libarchive worker via Blob URL to avoid cross-origin Worker restriction
+    try {
+        const workerResp = await fetch('https://unpkg.com/libarchive.js@1.3.0/dist/worker-bundle.js');
+        if (!workerResp.ok) throw new Error('HTTP ' + workerResp.status);
+        const workerText = await workerResp.text();
+        const workerUrl  = URL.createObjectURL(new Blob([workerText], { type: 'application/javascript' }));
+        await Archive.init({ workerUrl });
+    } catch(e) {
+        status('Could not load archive engine: ' + e.message, true);
+    }
+
+    // ── Drop zone events ─────────────────────────────────────────────────────────
+    const exDrop = document.getElementById('exDrop');
+    const archInput = document.getElementById('archiveInput');
+
+    // Drag & drop events
+    exDrop.addEventListener('dragover',  e => { e.preventDefault(); exDrop.classList.add('drag-over'); });
+    exDrop.addEventListener('dragleave', () => exDrop.classList.remove('drag-over'));
+    exDrop.addEventListener('drop', e => {
+        e.preventDefault(); exDrop.classList.remove('drag-over');
+        if (e.dataTransfer.files[0]) loadArchive(e.dataTransfer.files[0]);
+    });
+    archInput.addEventListener('change', () => {
+        if (archInput.files[0]) loadArchive(archInput.files[0]);
+    });
+
+    // ── Load & parse archive ─────────────────────────────────────────────────────
+    async function loadArchive(file) {
+        // Check daily limit
+        const exLimit = _EX_LIMITS[_EX_PLAN] ?? _EX_LIMITS.free;
+        if (exLimit !== null && _exUsed() >= exLimit) {
+            const upgradeHtml = _EX_BILLING
+                ? ` <a href="${_EX_BILLING}" target="_blank" rel="noopener" style="color:var(--link-color)">Upgrade ↗</a>`
+                : '';
+            statusMsg.innerHTML = `Daily limit reached (${_exUsed()}/${exLimit} archives today).${upgradeHtml}`;
+            statusMsg.style.display = 'block';
+            statusMsg.style.color = '#ff6b6b';
+            return;
+        }
+        _exIncrement();
+        archiveName = file.name;
+        totalSize   = 0;
+        archiveEntries = [];
+        archiveObjMap  = {};
+        document.getElementById('archiveResult').style.display = 'none';
+        status('Opening ' + file.name + '…');
+
+        // Try to open the archive using libarchive.js
+        try {
+            const archive = await Archive.open(file);
+            const obj     = await archive.extractFiles();  // { 'path': File | Blob }
+
+            // Flatten nested object → flat array of { path, file/blob }
+            function flatten(node, prefix) {
+                if (node instanceof File || node instanceof Blob) {
+                    const size = node.size || 0;
+                    totalSize += size;
+                    archiveObjMap[prefix] = node;
+                    archiveEntries.push({ path: prefix, size, isDir: false });
+                } else if (typeof node === 'object') {
+                    for (const [k, v] of Object.entries(node)) {
+                        flatten(v, prefix ? prefix + '/' + k : k);
+                    }
+                }
+            }
+            flatten(obj, '');
+
+            clearStatus();
+            renderResult();
+        } catch(e) {
+            // Fallback to ZIP-only fflate if libarchive fails (e.g. format not supported)
+            if (file.name.toLowerCase().endsWith('.zip')) {
+                await fallbackZip(file);
+            } else {
+                status('Could not open archive: ' + e.message + '. This format may not be supported.', true);
+            }
+        }
+    }
+
+    // Fallback ZIP extraction using fflate (no worker needed)
+    async function fallbackZip(file) {
+        status('Trying ZIP fallback…');
+
+        // Load fflate library from CDN
+        await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
+            s.onload = res; s.onerror = () => rej(new Error('Could not load fflate'));
+            document.head.appendChild(s);
+        });
+
+        // Extract ZIP using fflate
+        const buf = await file.arrayBuffer();
+        const extracted = await new Promise((res, rej) =>
+            fflate.unzip(new Uint8Array(buf), (err, files) => err ? rej(err) : res(files))
+        );
+        for (const [path, data] of Object.entries(extracted)) {
+            if (path.endsWith('/')) continue;
+            const blob = new Blob([data]);
+            totalSize += data.byteLength;
+            archiveObjMap[path] = blob;
+            archiveEntries.push({ path, size: data.byteLength, isDir: false });
+        }
+
+        // Render results
+        clearStatus();
+        renderResult();
+    }
+
+    // ── Render file tree ─────────────────────────────────────────────────────────
+    // Format file size in human-readable form
+    function fmtSize(n) {
+        if (n === 0)     return '-';
+        if (n < 1024)    return n + ' B';
+        if (n < 1048576) return (n/1024).toFixed(1)+' KB';
+        return (n/1048576).toFixed(2)+' MB';
+    }
+
+    // Sort entries based on currentSort and sortAsc
+    function sortEntries(entries) {
+        return [...entries].sort((a, b) => {
+            let cmp = 0;
+            if (currentSort === 'name') cmp = a.path.localeCompare(b.path);
+            else if (currentSort === 'size') cmp = a.size - b.size;
+            else if (currentSort === 'type') cmp = (a.path.split('.').pop()||'').localeCompare(b.path.split('.').pop()||'');
+            return sortAsc ? cmp : -cmp;
+        });
+    }
+
+    // Render the file tree in the UI
+    function renderTree(entries) {
+        // Sort entries before rendering
+        const tree = document.getElementById('fileTree');
+        if (!entries.length) {
+            tree.innerHTML = '<div style="padding:14px 16px;opacity:0.5;font-size:0.82rem">No files found.</div>';
+            return;
+        }
+
+        // Render each entry as a row in the file tree
+        tree.innerHTML = sortEntries(entries).map(e => `
+            <div class="ft-row">
+                <span class="ft-name">${e.path}</span>
+                <span class="ft-size">${fmtSize(e.size)}</span>
+                <span class="ft-dl">
+                    ${archiveObjMap[e.path]
+                        ? `<button onclick="downloadFile(${JSON.stringify(e.path)})">⬇ Save</button>`
+                        : ''}
+                </span>
+            </div>`).join('');
+    }
+
+    // Render the results after extraction
+    function renderResult() {
+        document.getElementById('archName').textContent = archiveName;
+        document.getElementById('archMeta').textContent =
+            archiveEntries.length + ' files · ' + fmtSize(totalSize) + ' total';
+        document.getElementById('filterInput').value = '';
+        document.getElementById('archiveResult').style.display = 'block';
+        renderTree(archiveEntries);
+    }
+
+    // ── Controls ──────────────────────────────────────────────────────────────────
+    // Filter the file tree based on user input
+    window.filterTree = function(q) {
+        const lower = q.toLowerCase();
+        const filtered = q ? archiveEntries.filter(e => e.path.toLowerCase().includes(lower)) : archiveEntries;
+        renderTree(filtered);
+    };
+
+    // Sort the file tree based on user selection
+    window.sortTree = function(by) {
+        if (currentSort === by) sortAsc = !sortAsc;
+        else { currentSort = by; sortAsc = true; }
+        const q = document.getElementById('filterInput').value;
+        const lower = q.toLowerCase();
+        renderTree(q ? archiveEntries.filter(e => e.path.toLowerCase().includes(lower)) : archiveEntries);
+    };
+
+    // Download a single file from the archive
+    window.downloadFile = function(path) {
+        const obj = archiveObjMap[path];
+        if (!obj) return;
+        const url = URL.createObjectURL(obj instanceof Blob ? obj : new Blob([obj]));
+        const a = document.createElement('a');
+        a.href = url; a.download = path.split('/').pop() || 'file';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+    };
+
+    // Download all files as a ZIP
+    window.downloadAll = async function() {
+        // Download all files as a new ZIP using fflate
+        if (!Object.keys(archiveObjMap).length) return;
+        status('Building ZIP…');
+        try {
+            await new Promise((res, rej) => {
+                if (window.fflate) { res(); return; }
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
+                s.onload = res; s.onerror = () => rej(new Error('fflate load failed'));
+                document.head.appendChild(s);
+            });
+            const zipData = {};
+            for (const [path, obj] of Object.entries(archiveObjMap)) {
+                const buf = await (obj instanceof Blob ? obj.arrayBuffer() : Promise.resolve(obj.buffer || obj));
+                zipData[path] = new Uint8Array(buf);
+            }
+            const zipped = fflate.zipSync(zipData);
+            const blob = new Blob([zipped], { type: 'application/zip' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = archiveName.replace(/\.[^.]+$/, '') + '_extracted.zip';
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            clearStatus();
+        } catch(e) {
+            status('Download failed: ' + e.message, true);
+        }
+    };
+
+    // Clear the current extraction results
+    window.clearExtract = function() {
+        archiveEntries = []; archiveObjMap = {}; totalSize = 0; archiveName = '';
+        document.getElementById('archiveResult').style.display = 'none';
+        clearStatus();
+        archInput.value = '';
+    };
+
+    // Toggle the display of supported formats list
+    window.toggleFormats = function(e) {
+        e.preventDefault();
+        const el = document.getElementById('fmtList');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    };
+</script>

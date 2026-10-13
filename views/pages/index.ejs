@@ -1,0 +1,1848 @@
+<!--
+    Home Page
+    This page allows users to drop a Windows executable (.exe, .dll, .sys) and inspect its PE headers, scan for threats, and simulate execution in the browser.
+-->
+
+<!-- Home Page Styles -->
+<style>
+    /* ── Drop zone ────────────────────────────────────────────────────────────── */
+    .drop-zone {
+        border: 2px dashed var(--form-border-color);
+        border-radius: 10px; padding: 60px 40px;
+        text-align: center; cursor: pointer;
+        transition: border-color 0.2s, background 0.2s;
+        background: var(--form-bg-color);
+    }
+    .drop-zone.drag-over { border-color: var(--link-color); background: rgba(140,136,243,0.05); }
+    .drop-zone-icon { font-size: 3rem; margin-bottom: 12px; }
+    .drop-zone-text { font-size: 1.1rem; color: var(--heading-color); margin-bottom: 6px; }
+    .drop-zone-sub  { font-size: 0.85rem; color: var(--link-color); }
+    #fileInput { display: none; }
+
+    /* ── Info cards ───────────────────────────────────────────────────────────── */
+    .info-card {
+        background: var(--form-bg-color);
+        border: 1px solid var(--form-border-color);
+        border-radius: 10px; padding: 20px 24px; margin-top: 16px;
+    }
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px; margin-top: 14px;
+    }
+    .info-item { display: flex; flex-direction: column; gap: 2px; }
+    .info-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--link-color); }
+    .info-value { font-size: 0.9rem; color: var(--text-color); word-break: break-all; }
+
+    .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .section-tag {
+        font-size: 0.72rem; font-family: 'Courier New', monospace;
+        background: var(--code-bg-color); color: var(--text-color);
+        padding: 2px 8px; border-radius: 3px;
+    }
+    .import-tag {
+        font-size: 0.72rem; font-family: 'Courier New', monospace;
+        background: rgba(140,136,243,0.12); color: var(--link-color);
+        padding: 2px 8px; border-radius: 3px;
+        border: 1px solid var(--form-border-color);
+    }
+
+    /* ── Virus scan card ──────────────────────────────────────────────────────── */
+    .scan-card { margin-top: 12px; }
+    .risk-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-weight: bold; font-size: 1rem;
+        padding: 5px 18px; border-radius: 20px;
+    }
+    .risk-clean    { background: #1a3a1a; color: #7fff7f; border: 1px solid #3a6a3a; }
+    .risk-low      { background: #3a3a1a; color: #ffff88; border: 1px solid #6a6a3a; }
+    .risk-suspicious { background: #3a2010; color: #ffaa44; border: 1px solid #6a4020; }
+    .risk-high     { background: #3a1010; color: #ff6b6b; border: 1px solid #6a2020; }
+
+    .finding-row {
+        display: flex; align-items: flex-start; gap: 8px;
+        padding: 6px 0; border-bottom: 1px solid var(--form-border-color);
+        font-size: 0.83rem; color: var(--text-color);
+    }
+    .finding-row:last-child { border-bottom: none; }
+    .finding-icon { flex-shrink: 0; width: 20px; text-align: center; }
+    .finding-good { color: #7fff7f; }
+    .finding-warning { color: #ffaa44; }
+    .finding-danger  { color: #ff6b6b; }
+    .finding-info    { color: var(--link-color); }
+
+    .hash-box {
+        font-family: 'Courier New', monospace; font-size: 0.7rem;
+        word-break: break-all; color: var(--link-color);
+        background: var(--code-bg-color); padding: 4px 8px;
+        border-radius: 4px; margin-top: 4px;
+        cursor: pointer;
+    }
+    .vt-result { margin-top: 10px; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; }
+    .vt-clean   { background: #1a3a1a; color: #7fff7f; border: 1px solid #3a6a3a; }
+    .vt-danger  { background: #3a1010; color: #ff6b6b; border: 1px solid #6a2020; }
+    .vt-unknown { background: var(--code-bg-color); color: var(--link-color); }
+
+    /* ── Terminal ─────────────────────────────────────────────────────────────── */
+    #terminal {
+        background: #0a0a0a; color: #ccc;
+        font-family: 'Courier New', monospace; font-size: 13px;
+        padding: 16px; border-radius: 8px; border: 1px solid #333;
+        min-height: 180px; max-height: 360px; overflow-y: auto;
+        white-space: pre-wrap; margin-top: 0; line-height: 1.6;
+    }
+    .t-green  { color: #7fff7f; } .t-yellow { color: #ffff88; }
+    .t-red    { color: #ff6b6b; } .t-blue   { color: #88aaff; }
+    .t-dim    { color: #666; }
+
+    #terminalWrap {
+        display: none;
+        margin-top: 14px;
+    }
+    #terminalWrap summary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        opacity: 0.5;
+        user-select: none;
+        list-style: none;
+        padding: 4px 0;
+    }
+    #terminalWrap summary::-webkit-details-marker { display: none; }
+    #terminalWrap summary::before {
+        content: '▶';
+        font-size: 0.65rem;
+        transition: transform 0.15s;
+    }
+    #terminalWrap[open] summary::before { transform: rotate(90deg); }
+    #terminalWrap[open] summary { opacity: 0.75; }
+
+    /* ── Security warnings ────────────────────────────────────────────────────── */
+    #warnStack {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: 320px;
+        pointer-events: none;
+    }
+    .warn-toast {
+        pointer-events: auto;
+        position: relative;
+        overflow: hidden;
+        border-radius: 8px;
+        padding: 10px 32px 12px 14px;
+        font-size: 0.79rem;
+        line-height: 1.45;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        transition: opacity 0.6s;
+        border-left: 4px solid;
+    }
+    .warn-toast.fading { opacity: 0; }
+    .warn-toast.level-warn  { background: #2a1f00; color: #ffd369; border-color: #f0a500; }
+    .warn-toast.level-danger { background: #2a0a0a; color: #ff9a9a; border-color: #e53935; }
+    .warn-toast strong { display: block; margin-bottom: 3px; font-size: 0.82rem; }
+    .warn-toast code { font-size: 0.78rem; opacity: 0.85; background: rgba(255,255,255,0.08); padding: 0 3px; border-radius: 3px; }
+    .warn-x {
+        position: absolute; top: 7px; right: 8px;
+        background: none; border: none; cursor: pointer;
+        color: inherit; opacity: 0.45; font-size: 0.85rem; line-height: 1; padding: 0;
+    }
+    .warn-x:hover { opacity: 1; }
+    .warn-bar {
+        position: absolute; bottom: 0; left: 0; right: 0;
+        height: 2px; background: currentColor; opacity: 0.3;
+        transform-origin: left;
+        animation: warn-drain var(--warn-dur, 9s) linear forwards;
+    }
+    @keyframes warn-drain { to { transform: scaleX(0); } }
+    #warnDownloadRow {
+        font-size: 0.78rem; opacity: 0.55; margin-top: 6px;
+        display: none;
+    }
+    #warnDownloadRow button {
+        background: none; border: 1px solid var(--form-border-color);
+        color: var(--text-color); border-radius: 4px;
+        padding: 3px 9px; cursor: pointer; font-size: 0.78rem;
+    }
+    #warnDownloadRow button:hover { opacity: 0.8; }
+
+    /* ── Run actions ──────────────────────────────────────────────────────────── */
+    .run-actions { display: flex; gap: 10px; margin-top: 14px; align-items: center; flex-wrap: wrap; }
+
+    /* ── Emulator ─────────────────────────────────────────────────────────────── */
+    #emuSection {
+        margin-top: 20px;
+        background: var(--form-bg-color);
+        border: 1px solid var(--form-border-color);
+        border-radius: 10px; padding: 16px;
+    }
+    #emuCanvas {
+        width: 100%; aspect-ratio: 4/3; max-height: 60vh;
+        background: #000; display: block; border-radius: 6px;
+        cursor: none; /* canvas captures mouse */
+    }
+    #emuLogWrap {
+        margin-top: 8px;
+    }
+    #emuLogWrap > summary {
+        cursor: pointer; font-size: 0.78rem; opacity: 0.55;
+        user-select: none; padding: 2px 0;
+    }
+    #emuLogWrap > summary:hover { opacity: 0.8; }
+    #emuLog {
+        background: #0a0a0a; color: #666;
+        font-family: 'Courier New', monospace; font-size: 11px;
+        padding: 8px 12px; border-radius: 4px; max-height: 80px;
+        overflow-y: auto; margin-top: 4px; white-space: pre-wrap;
+    }
+    .emu-setup {
+        background: var(--code-bg-color); border: 1px solid var(--form-border-color);
+        border-radius: 8px; padding: 18px 20px; font-size: 0.85rem; color: var(--text-color);
+    }
+    .emu-setup code {
+        background: var(--pre-bg-color); padding: 2px 6px; border-radius: 3px;
+        font-family: 'Courier New', monospace; font-size: 0.8rem;
+    }
+    .emu-controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+    /* ── ZIP runner ───────────────────────────────────────────────────────────── */
+    .zip-zone {
+        border: 2px dashed var(--form-border-color);
+        border-radius: 10px; padding: 40px 30px;
+        text-align: center; cursor: pointer;
+        background: var(--form-bg-color);
+        transition: border-color 0.2s, background 0.2s; margin-top: 32px;
+    }
+    .zip-zone.drag-over { border-color: var(--link-color); background: rgba(140,136,243,0.05); }
+    .zip-tree {
+        margin-top: 14px; background: var(--code-bg-color);
+        border: 1px solid var(--form-border-color);
+        border-radius: 8px; padding: 12px 16px;
+        font-family: 'Courier New', monospace; font-size: 0.78rem;
+        max-height: 300px; overflow-y: auto;
+    }
+    .zip-tree-item {
+        display: flex; align-items: center; gap: 8px; padding: 3px 0;
+        color: var(--text-color); border-bottom: 1px solid var(--form-border-color);
+    }
+    .zip-tree-item:last-child { border-bottom: none; }
+    .zip-tree-item.is-exe { color: var(--link-color); font-weight: bold; }
+    .zip-tree-item .zt-size { margin-left: auto; color: var(--link-color); font-size: 0.7rem; flex-shrink: 0; }
+
+    @media (max-width: 600px) {
+        .zip-zone { padding: 24px 12px; }
+    }
+
+    /* ── History ──────────────────────────────────────────────────────────────── */
+    .history-row {
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 14px; background: var(--form-bg-color);
+        border: 1px solid var(--form-border-color);
+        border-radius: 6px; margin-bottom: 8px; font-size: 0.9rem;
+        flex-wrap: wrap;
+    }
+    .history-row .hr-name { flex: 1; font-weight: bold; color: var(--heading-color); word-break: break-all; min-width: 120px; }
+    .history-row .hr-meta { color: var(--link-color); font-size: 0.8rem; white-space: nowrap; }
+    .history-row .hr-del  { background: none; border: none; color: var(--link-color); cursor: pointer; padding: 4px 8px; font-size: 0.85rem; }
+    .history-row .hr-del:hover { color: #ff6b6b; }
+
+
+    /* ── Responsive ───────────────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+        .drop-zone { padding: 32px 16px; }
+        .info-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ── Feature tier badges ──────────────────────────────────────────────────── */
+    .feature-badge {
+        font-size: 0.55rem; font-weight: 700; letter-spacing: 0.06em;
+        padding: 1px 6px; border-radius: 8px; text-transform: uppercase;
+        vertical-align: middle; margin-left: 6px;
+    }
+    .badge-pro    { background: #3b82f6; color: #fff; }
+    .badge-studio { background: linear-gradient(90deg, #7c3aed, #db2777); color: #fff; }
+    .gate-overlay {
+        border: 1px dashed var(--form-border-color); border-radius: 10px;
+        padding: 20px; text-align: center; color: var(--link-color); font-size: 0.88rem;
+    }
+</style>
+
+<!-- Home Page Content -->
+<h2 style="text-align:center">Run an EXE</h2>
+<p style="text-align:center;color:var(--link-color);margin-bottom:24px">
+    Drop a Windows executable to inspect its PE headers, scan for threats, and simulate execution.
+</p>
+
+<div id="warnStack"></div>
+
+<!-- ── Drop zone ─────────────────────────────────────────────────────────────── -->
+<div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+    <div class="drop-zone-text">Drop an .exe, .dll, or .sys file here</div>
+    <div class="drop-zone-sub">or click to browse</div>
+    <input type="file" id="fileInput" accept=".exe,.dll,.sys,.scr,.com">
+</div>
+
+<!-- ── Analysis section (hidden until a file is dropped) ─────────────────────── -->
+<div id="analysisSection" style="display:none">
+    <!-- PE Info card -->
+    <div class="info-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <h3 style="text-align:left;margin:0" id="fileName">-</h3>
+            <span id="fileSize" style="font-size:0.85rem;color:var(--link-color)"></span>
+        </div>
+        <div class="info-grid" id="infoGrid"></div>
+        <div style="margin-top:14px">
+            <div class="info-label">Sections</div>
+            <div class="tag-row" id="sectionTags"></div>
+        </div>
+        <div style="margin-top:10px" id="importsWrap">
+            <div class="info-label">Imports (DLLs)</div>
+            <div class="tag-row" id="importTags"></div>
+        </div>
+    </div>
+
+    <!-- Security scan card -->
+    <div class="info-card scan-card" id="scanCard" style="display:none">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+            <div>
+                <span id="riskBadge" class="risk-badge">Scanning…</span>
+                <div style="margin-top:8px">
+                    <div class="info-label">SHA-256</div>
+                    <div class="hash-box" id="sha256box" onclick="copyHash()" title="Click to copy">Computing…</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+                <button id="vtBtn" onclick="checkVT()" style="font-size:0.8rem;padding:6px 12px" title="Search VirusTotal for this file hash">
+                    VirusTotal
+                </button>
+                <a id="vtDirectLink" href="#" target="_blank" rel="noopener noreferrer"
+                   style="display:none;font-size:0.8rem;padding:6px 12px;border:1px solid var(--form-border-color);border-radius:5px;color:var(--link-color);text-decoration:none">
+                    Open in VT ↗
+                </a>
+            </div>
+        </div>
+        <div id="findingsList"></div>
+        <div id="vtResult" style="display:none" class="vt-result vt-unknown"></div>
+    </div>
+
+    <!-- ── Run controls ──────────────────────────────────────────────────── -->
+    <div class="run-actions">
+        <button id="runBtn" onclick="runExe()">Simulate</button>
+        <button id="emuBtn" onclick="launchEmulator()" title="Run this EXE in a real Windows emulator">Run in Emulator</button>
+        <button onclick="clearAll()" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color);">Clear</button>
+        <span id="runStatus" style="font-size:0.85rem;color:var(--link-color)"></span>
+    </div>
+
+    <details id="terminalWrap">
+        <summary>Debug terminal</summary>
+        <div id="terminal"></div>
+    </details>
+    <div id="warnDownloadRow">
+        <button onclick="downloadWarnings()">Download security report</button>
+    </div>
+
+    <!-- ── Emulator canvas ───────────────────────────────────────────────── -->
+    <div id="emuSection" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <strong style="font-size:0.95rem">Emulator</strong>
+            <div class="emu-controls">
+                <button id="emuFullscreenBtn" onclick="emuFullscreen()" style="font-size:0.78rem;padding:4px 10px">Fullscreen</button>
+                <button onclick="stopEmulator()" style="font-size:0.78rem;padding:4px 10px;background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">Stop</button>
+            </div>
+        </div>
+        <div id="emuContent">
+            <!-- Populated by JS: canvas or setup instructions -->
+        </div>
+        <details id="emuLogWrap" style="display:none">
+            <summary>Emulator log</summary>
+            <div id="emuLog"></div>
+        </details>
+    </div>
+</div>
+
+<!-- ── Run full app from ZIP ─────────────────────────────────────────────── -->
+<div style="margin-top:40px">
+    <h2>Run App from Folder / ZIP</h2>
+    <p style="color:var(--link-color);font-size:0.88rem;margin-bottom:0">
+        For apps that ship as a folder with multiple files,
+        zip the whole folder and drop it here.
+    </p>
+
+    <div class="zip-zone" id="zipZone" onclick="document.getElementById('zipInput').click()">
+        <div style="font-size:1rem;color:var(--heading-color);margin-bottom:4px">Drop a .zip here</div>
+        <div style="font-size:0.82rem;color:var(--link-color)">or click to browse</div>
+        <input type="file" id="zipInput" style="display:none" accept=".zip">
+    </div>
+
+    <div id="zipInfo" style="display:none;margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <div>
+                <strong id="zipName" style="color:var(--heading-color)"></strong>
+                <span id="zipFileCount" style="font-size:0.8rem;color:var(--link-color);margin-left:10px"></span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <select id="zipExeSelect" style="font-size:0.82rem;padding:4px 8px;border:1px solid var(--form-border-color);background:var(--form-bg-color);color:var(--text-color);border-radius:4px"></select>
+                <button id="zipRunBtn" onclick="runZipInEmulator()">Run in Emulator</button>
+            </div>
+        </div>
+        <div class="zip-tree" id="zipTree"></div>
+    </div>
+</div>
+
+<!-- ── Run history ────────────────────────────────────────────────────────── -->
+<% if (locals.user) { %>
+<div style="margin-top:40px">
+    <h2>Run History</h2>
+    <hr style="border-color:var(--form-border-color)">
+    <div id="historyList">
+        <% if (locals.runs && runs.length > 0) { %>
+            <% runs.forEach(r => { %>
+            <div class="history-row" id="hr-<%= r._id %>">
+                <span class="hr-name"><%= r.fileName %></span>
+                <span class="hr-meta"><%= r.architecture %> &middot; <%= r.subsystem %></span>
+                <span class="hr-meta"><%= new Date(r.runAt).toLocaleDateString() %></span>
+                <button class="hr-del" onclick="deleteRun('<%= r._id %>')">✕</button>
+            </div>
+            <% }) %>
+        <% } else { %>
+            <div class="empty-state">No runs yet. Drop an EXE above to get started.</div>
+        <% } %>
+    </div>
+</div>
+<% } else { %>
+<p style="text-align:center;margin-top:32px;color:var(--link-color)">
+    <a href="/login">Log in</a> to save your run history.
+</p>
+<% } %>
+
+<!-- Home Page Scripts -->
+<script>
+    // ── Plan / daily limits ───────────────────────────────────────────────────────
+    const USER_PLAN        = '<%= (locals.user && user.plan) ? user.plan : "guest" %>';
+    const BILLING_URL_CLIENT = '<%- (!locals.monetizationHidden && locals.billingUrl && billingUrl) ? billingUrl : "" %>';
+    const _PLAN_TIER       = { guest: -1, free: 0, pro: 1, studio: 2 };
+
+    // Client-side daily limits (EXE runs, convert files). Server enforces VT + Wine64.
+    const _DAILY_LIMITS = {
+        guest:  { exe: 5,    convert: 20  },
+        free:   { exe: 5,    convert: 20  },
+        pro:    { exe: 50,   convert: 200 },
+        studio: { exe: null, convert: null },
+    };
+
+    const _TODAY = new Date().toISOString().slice(0, 10);   // "YYYY-MM-DD" UTC
+
+    // Returns the number of times a given action has been performed today.
+    function _getDailyCount(key) {
+        try {
+            const d = JSON.parse(localStorage.getItem('ts_' + key) || 'null');
+            return (d && d.date === _TODAY) ? (d.count || 0) : 0;
+        } catch { return 0; }
+    }
+
+    // Increments the daily count for a given action and returns the new count.
+    function _incDailyCount(key) {
+        const n = _getDailyCount(key) + 1;
+        localStorage.setItem('ts_' + key, JSON.stringify({ date: _TODAY, count: n }));
+        return n;
+    }
+
+    // Returns true if the user's plan is at least the given plan tier.
+    function isPlanAtLeast(minPlan) {
+        return (_PLAN_TIER[USER_PLAN] || 0) >= (_PLAN_TIER[minPlan] || 0);
+    }
+
+    // Returns a link to the billing page if available, otherwise a message.
+    function upgradeLink(label) {
+        if (!BILLING_URL_CLIENT) return `${label} plan required`;
+        return `<a href="${BILLING_URL_CLIENT}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Upgrade for more ↗</a>`;
+    }
+
+    // Returns false and writes a friendly message if the daily exe limit is reached.
+    function checkExeLimit(statusEl) {
+        const lim = _DAILY_LIMITS[USER_PLAN] ?? _DAILY_LIMITS.free;
+        if (lim.exe === null) return true;   // unlimited
+        const used = _getDailyCount('exe');
+        if (used >= lim.exe) {
+            if (statusEl) statusEl.innerHTML =
+                `You've used all ${lim.exe} free runs today. Please wait until it resets at 12:00AM UTC. ${upgradeLink('Pro')}`;
+            return false;
+        }
+        return true;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // Utilities
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    // Escapes a string for safe insertion into HTML (text or attribute values).
+    function esc(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c =>
+            ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    }
+
+    // Formats a byte count into a human-readable string (B, KB, MB).
+    function fmtSize(n) {
+        if (n < 1024)     return n + ' B';
+        if (n < 1048576)  return (n/1024).toFixed(1) + ' KB';
+        return (n/1048576).toFixed(2) + ' MB';
+    }
+
+    // Computes the Shannon entropy of a byte array (0-255).
+    function shannonEntropy(data) {
+        if (!data || !data.length) return 0;
+        const freq = new Uint32Array(256);
+        for (let i = 0; i < data.length; i++) freq[data[i]]++;
+        let entropy = 0;
+        for (let i = 0; i < 256; i++) {
+            if (!freq[i]) continue;
+            const p = freq[i] / data.length;
+            entropy -= p * Math.log2(p);
+        }
+        return entropy;
+    }
+
+    // Computes the SHA-256 hash of an ArrayBuffer and returns it as a hex string.
+    async function sha256hex(buffer) {
+        const hash = await crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // PE Parser (MZ/PE headers, sections, DLL-level + function-level imports,
+    //            entropy per section)
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    // Parses a PE file from an ArrayBuffer and returns an object with metadata.
+    function parsePE(buffer, fileName, fileSize) {
+        const u8   = new Uint8Array(buffer);
+        const view = new DataView(buffer);
+
+        if (u8[0] !== 0x4D || u8[1] !== 0x5A)
+            return {valid: false, error: 'Not a valid PE file, missing MZ signature.', fileName, fileSize};
+
+        const peOffset = view.getUint32(0x3C, true);
+        if (peOffset + 4 > buffer.byteLength || view.getUint32(peOffset, true) !== 0x00004550)
+            return {valid: false, error: 'Missing PE signature at expected offset.', fileName, fileSize};
+
+        const machine     = view.getUint16(peOffset + 4, true);
+        const numSections = view.getUint16(peOffset + 6, true);
+        const timestamp   = view.getUint32(peOffset + 8, true);
+        const optSize     = view.getUint16(peOffset + 20, true);
+        const chars       = view.getUint16(peOffset + 22, true);
+        const optMagic    = optSize > 0 ? view.getUint16(peOffset + 24, true) : 0;
+        const is64        = optMagic === 0x20B;
+
+        let subsystem = 0;
+        if (optSize >= 70) {
+            try { subsystem = view.getUint16(peOffset + 24 + 68, true); } catch {}
+        }
+
+        const secTableOff = peOffset + 24 + optSize;
+        const sections    = [];   // names only, for display
+        const secHeaders  = [];   // { name, virtAddr, rawSize, rawOff, entropy }
+        const sectionData = [];   // { name, entropy, rawSize }
+
+        for (let i = 0; i < Math.min(numSections, 24); i++) {
+            const b = secTableOff + i * 40;
+            if (b + 40 > buffer.byteLength) break;
+            let name = '';
+            for (let j = 0; j < 8; j++) { const c = u8[b+j]; if (!c) break; name += String.fromCharCode(c); }
+            const virtAddr = view.getUint32(b + 12, true);
+            const rawSize  = view.getUint32(b + 16, true);
+            const rawOff   = view.getUint32(b + 20, true);
+            sections.push(name);
+            secHeaders.push({ name, virtAddr, rawSize, rawOff });
+
+            // Entropy on up to 64 KB of each section
+            const sample = Math.min(rawSize, 65536);
+            const data   = (sample > 0 && rawOff + sample <= buffer.byteLength)
+                ? u8.slice(rawOff, rawOff + sample) : null;
+            sectionData.push({ name, entropy: data ? shannonEntropy(data) : 0, rawSize });
+        }
+
+        function rva2off(rva) {
+            for (const s of secHeaders) {
+                if (rva >= s.virtAddr && rva < s.virtAddr + s.rawSize)
+                    return rva - s.virtAddr + s.rawOff;
+            }
+            return -1;
+        }
+
+        // ── Import parsing (DLL names + function names) ───────────────────────
+        const dirBase = peOffset + 24 + (is64 ? 112 : 96);
+
+        const imports     = [];          // flat DLL list
+        const funcImports = {};          // { dll: [fn1, fn2, ...] }
+
+        // Walk the import directory table and read DLL names + function names
+        try {
+            if (dirBase + 8 <= buffer.byteLength) {
+                const impRVA  = view.getUint32(dirBase + 8,  true);
+                const impSize = view.getUint32(dirBase + 12, true);
+
+                // Walk the import directory table (20 bytes per entry) until a null entry is found
+                if (impRVA > 0 && impSize > 0) {
+                    let off = rva2off(impRVA);
+                    if (off > 0) {
+                        while (off + 20 <= buffer.byteLength) {
+                            const iltRVA  = view.getUint32(off, true) || view.getUint32(off + 16, true);   // OriginalFirstThunk, or FirstThunk if 0
+                            const nameRVA = view.getUint32(off + 12, true);   // Name RVA
+                            if (!nameRVA) break;
+
+                            // Read DLL name
+                            const nameOff = rva2off(nameRVA);
+                            let dll = '';
+                            if (nameOff >= 0) {
+                                for (let k = nameOff; k < Math.min(nameOff+80, buffer.byteLength); k++) {
+                                    if (!u8[k]) break;
+                                    dll += String.fromCharCode(u8[k]);
+                                }
+                            }
+                            const dllLow = dll.toLowerCase();
+                            if (dllLow) { imports.push(dllLow); funcImports[dllLow] = []; }
+
+                            // Walk ILT for function names
+                            if (iltRVA && dllLow) {
+                                let iltOff = rva2off(iltRVA);
+                                const step = is64 ? 8 : 4;
+                                while (iltOff >= 0 && iltOff + step <= buffer.byteLength) {
+                                    // For PE32+: hi DWORD ordinal flag at iltOff+4 bit 31
+                                    // For PE32:  entry bit 31
+                                    let isOrdinal, hnRVA;
+                                    if (is64) {
+                                        const hi = view.getUint32(iltOff + 4, true);
+                                        const lo = view.getUint32(iltOff,     true);
+                                        if (!hi && !lo) break;
+                                        isOrdinal = !!(hi & 0x80000000);
+                                        hnRVA     = lo & 0x7FFFFFFF;
+                                    } else {
+                                        const entry = view.getUint32(iltOff, true);
+                                        if (!entry) break;
+                                        isOrdinal = !!(entry & 0x80000000);
+                                        hnRVA     = entry & 0x7FFFFFFF;
+                                    }
+                                    if (!isOrdinal && hnRVA) {
+                                        const hnOff = rva2off(hnRVA);
+                                        if (hnOff >= 0 && hnOff + 2 < buffer.byteLength) {
+                                            let fn = '';
+                                            for (let k = hnOff+2; k < Math.min(hnOff+82, buffer.byteLength); k++) {
+                                                if (!u8[k]) break;
+                                                fn += String.fromCharCode(u8[k]);
+                                            }
+                                            if (fn && funcImports[dllLow]) funcImports[dllLow].push(fn);
+                                        }
+                                    }
+                                    iltOff += step;
+                                }
+                            }
+                            off += 20;
+                        }
+                    }
+                }
+            }
+        } catch {}
+
+        // Human-readable mappings for machine types
+        const MACHINE = {
+            0x014c:'x86 (32-bit)', 0x8664:'x86-64 (64-bit)',
+            0x01c0:'ARM',           0xAA64:'ARM64',
+            0x0200:'Itanium',       0x01f0:'PowerPC',
+            0x0166:'MIPS R3000',
+        };
+
+        // Maps subsystem values to human-readable strings.
+        // Reference: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#subsystem
+        const SUBSYS = {
+            0:'Unknown', 1:'Native', 2:'Windows GUI', 3:'Windows CUI (Console)',
+            5:'OS/2 CUI', 7:'POSIX CUI', 9:'Windows CE GUI',
+            10:'EFI Application', 11:'EFI Boot Driver', 14:'Xbox', 16:'Windows Boot'
+        };
+
+        // Return the parsed metadata
+        return {
+            valid: true, fileName, fileSize,
+            machine:      MACHINE[machine] || `Unknown (0x${machine.toString(16).toUpperCase()})`,
+            is64, numSections,
+            timestamp:    timestamp ? new Date(timestamp * 1000).toUTCString() : 'Not set',
+            rawTimestamp: timestamp,
+            subsystem:    SUBSYS[subsystem] || `Unknown (${subsystem})`,
+            isDLL:        !!(chars & 0x2000),
+            isConsole:    subsystem === 3,
+            rawSubsys:    subsystem,
+            sections, sectionData,
+            imports,          // DLL list (flat)
+            funcImports,      // { dll: [fn, ...] }
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // Threat Analysis (heuristic, client-side, no upload)
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    // Analyzes the PE metadata and returns a list of findings and a risk score.
+    function analyzeThreats(meta) {
+        const findings   = [];
+        let riskScore    = 0;
+
+        const secNames = meta.sectionData.map(s => s.name.toLowerCase());
+        const dlls     = (meta.imports || []).map(d => d.toLowerCase());
+        const allFns   = Object.values(meta.funcImports || {}).flat().map(f => f.toLowerCase());
+
+        function add(type, text, score) {
+            findings.push({ type, text, score });
+            riskScore += score;
+        }
+
+        // ── Packing / obfuscation ────────────────────────────────────────────
+        const PACKERS = {
+            '.upx0':'UPX', '.upx1':'UPX', 'upx0':'UPX', 'upx1':'UPX',
+            '.aspack':'ASPack', '.themida':'Themida', '.enigma1':'Enigma',
+            '.nsp0':'NsPack', '.nsp1':'NsPack', 'pelock':'PELock'
+        };
+        for (const s of meta.sectionData) {
+            const p = PACKERS[s.name.toLowerCase()];
+            if (p) { add('warning', `Packed with ${p}, so executable contents are hidden`, 40); break; }
+        }
+
+        // ── High entropy sections (packed / encrypted data) ──────────────────
+        let hiCount = 0;
+        for (const s of meta.sectionData) {
+            if (s.entropy > 7.2 && s.rawSize > 4096 && hiCount < 3) {
+                add('warning', `High entropy in ${s.name} (${s.entropy.toFixed(2)} bits/byte), possibly packed or encrypted`, 15);
+                hiCount++;
+            }
+        }
+
+        // ── Import table anomalies ───────────────────────────────────────────
+        if (dlls.length === 0) {
+            add('warning', 'No imports detected: possibly packed, corrupted, or raw shellcode', 35);
+        } else if (dlls.length < 2 && meta.fileSize > 102400) {
+            add('warning', `Very few imports (${dlls.length}) for a ${fmtSize(meta.fileSize)} file, possible packing`, 20);
+        }
+
+        // ── Dangerous API calls ──────────────────────────────────────────────
+        const DANGER = [
+            { fns:['createremotethread'],                    text:'CreateRemoteThread - injects code into another process',     score:35 },
+            { fns:['virtualallocex'],                        text:'VirtualAllocEx - allocates memory in a remote process',      score:25 },
+            { fns:['writeprocessmemory'],                    text:'WriteProcessMemory - writes to memory of another process',   score:30 },
+            { fns:['setwindowshookex','setwindowshookexa','setwindowshookexw'],
+                                                            text:'SetWindowsHookEx - system-wide hook (keylogger indicator)', score:25 },
+            { fns:['getasynckeystate'],                      text:'GetAsyncKeyState - monitors keystrokes in real time',       score:15 },
+            { fns:['cryptencrypt'],                          text:'CryptEncrypt - file encryption (ransomware indicator)',      score:20 },
+            { fns:['ntopenprocess','zwqueryinformationprocess'],
+                                                            text:'Low-level NT process access (rootkit technique)',           score:30 },
+        ];
+        for (const c of DANGER) {
+            if (c.fns.some(fn => allFns.includes(fn)))
+                add('danger', c.text, c.score);
+        }
+
+        // ── Suspicious but not necessarily malicious ─────────────────────────
+        const WARN_FNS = [
+            { fns:['regcreatekeyexa','regcreatekeyexw'], text:'Registry key creation - may add persistence entries', score:10 },
+            { fns:['winexec','shellexecutea','shellexecutew'], text:'Shell/process execution - spawns external processes', score:10 },
+            { fns:['internetopenurla','internetopenurlw'], text:'URL-based network access', score:8 },
+        ];
+        for (const c of WARN_FNS) {
+            if (c.fns.some(fn => allFns.includes(fn)))
+                add('warning', c.text, c.score);
+        }
+
+        // ── Timestamp anomalies ──────────────────────────────────────────────
+        if (meta.rawTimestamp === 0)
+            add('info', 'Compile timestamp is zero, though that\'s often stripped by build tools or repackagers', 10);
+        const year = meta.rawTimestamp ? new Date(meta.rawTimestamp * 1000).getUTCFullYear() : 0;
+        if (year && (year < 1995 || year > new Date().getFullYear() + 1))
+            add('warning', `Timestamp year ${year} is invalid`, 15);
+
+        // ── Positive signals ─────────────────────────────────────────────────
+        if (dlls.length >= 5)
+            add('good', `Rich import table (${dlls.length} DLLs), consistent with safe software`, 0);
+        if (secNames.includes('.rsrc'))
+            add('good', '.rsrc section present, which contains version info, icon, or manifest', 0);
+        if (!findings.length)
+            add('good', 'No suspicious patterns detected', 0);
+
+        return { findings, riskScore: Math.min(Math.round(riskScore), 100) };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // UI - analysis display
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    const dropZone  = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    let currentMeta = null;
+    let currentHash = null;
+    let currentBuf  = null;
+
+    // Drag-and-drop and file input handling
+    dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault(); dropZone.classList.remove('drag-over');
+        const f = e.dataTransfer.files[0];
+        if (f) loadFile(f);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+
+    // Loads a file, parses it as a PE, and displays the analysis.
+    function loadFile(file) {
+        const reader = new FileReader();
+        reader.onload = async e => {
+            const buf  = e.target.result;
+            currentBuf = buf;
+            const meta = parsePE(buf, file.name, file.size);
+            currentMeta = meta;
+            currentHash = null;
+            showAnalysis(meta, file.name, file.size);
+            // SHA-256 and threat scan run after display
+            if (meta.valid) {
+                sha256hex(buf).then(h => {
+                    currentHash = h;
+                    document.getElementById('sha256box').textContent = h;
+                    const link = document.getElementById('vtDirectLink');
+                    link.href = `https://www.virustotal.com/gui/file/${h}`;
+                    link.style.display = 'inline-flex';
+                });
+                runThreatScan(meta);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    // Displays the PE metadata and resets the UI for a new file.
+    function showAnalysis(meta, name, size) {
+        document.getElementById('analysisSection').style.display = 'block';
+        const tw = document.getElementById('terminalWrap');
+        tw.style.display = 'none';
+        tw.removeAttribute('open');
+        document.getElementById('terminal').innerHTML = '';
+        document.getElementById('runStatus').textContent        = '';
+        document.getElementById('fileName').textContent         = name;
+        document.getElementById('fileSize').textContent         = fmtSize(size);
+        document.getElementById('scanCard').style.display       = 'none';
+        document.getElementById('vtResult').style.display       = 'none';
+        document.getElementById('warnStack').innerHTML          = '';
+        if (meta.valid) showThreats(meta);
+
+        const grid = document.getElementById('infoGrid');
+        grid.innerHTML = '';
+
+        // If the PE is invalid, show an error and disable the run button.
+        if (!meta.valid) {
+            grid.innerHTML = `<div class="info-item"><div class="info-label">Error</div>
+                <div class="info-value" style="color:#ff6b6b">${esc(meta.error)}</div></div>`;
+            document.getElementById('runBtn').disabled = true;
+            document.getElementById('sectionTags').innerHTML = '';
+            document.getElementById('importTags').innerHTML  = '';
+            return;
+        }
+
+        // Populate the info grid with PE metadata and enable the run button.
+        document.getElementById('runBtn').disabled = false;
+        const fields = [
+            ['Type',         meta.isDLL ? 'Dynamic Link Library (.dll)' : 'Executable (.exe)'],
+            ['Architecture', meta.machine],
+            ['Bitness',      meta.is64 ? '64-bit (PE32+)' : '32-bit (PE32)'],
+            ['Subsystem',    meta.subsystem],
+            ['Sections',     meta.numSections],
+            ['Compiled',     meta.timestamp],
+        ];
+        grid.innerHTML = fields.map(([l,v]) =>
+            `<div class="info-item"><div class="info-label">${l}</div><div class="info-value">${esc(v)}</div></div>`
+        ).join('');
+
+        document.getElementById('sectionTags').innerHTML =
+            meta.sections.map(s => `<span class="section-tag">${esc(s)}</span>`).join('') ||
+            '<span style="color:var(--link-color);font-size:0.8rem">None found</span>';
+
+        document.getElementById('importsWrap').style.display = meta.imports.length ? 'block' : 'none';
+        document.getElementById('importTags').innerHTML =
+            meta.imports.map(d => `<span class="import-tag">${esc(d)}</span>`).join('');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // Threat scan UI
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    // Runs the threat analysis and updates the UI with findings and risk score.
+    function runThreatScan(meta) {
+        const card   = document.getElementById('scanCard');
+        const badge  = document.getElementById('riskBadge');
+        const list   = document.getElementById('findingsList');
+        const hashEl = document.getElementById('sha256box');
+
+        card.style.display = 'block';
+        badge.className    = 'risk-badge';
+        badge.textContent  = 'Scanning…';
+        list.innerHTML     = '';
+        hashEl.textContent = 'Computing…';
+
+        const { findings, riskScore } = analyzeThreats(meta);
+
+        // Risk badge
+        let badgeClass, badgeText;
+        if (riskScore <= 20) {
+            badgeClass = 'risk-clean';     badgeText = 'No threats detected';
+        } else if (riskScore <= 50) {
+            badgeClass = 'risk-low';       badgeText = 'Low risk';
+        } else if (riskScore <= 75) {
+            badgeClass = 'risk-suspicious'; badgeText = 'Suspicious';
+        } else {
+            badgeClass = 'risk-high';      badgeText = 'High risk';
+        }
+        badge.className   = 'risk-badge ' + badgeClass;
+        badge.textContent = badgeText + ` (${riskScore}/100)`;
+        badge.style.color = (riskScore > 75) ? '#ff6b6b' : (riskScore > 50) ? '#f0ad4e' : (riskScore > 20) ? '#f7c948' : '#4caf50';
+
+        // Findings list
+        list.innerHTML = findings.map(f => `
+            <div class="finding-row">
+                <span class="finding-icon finding-${f.type}">${esc(f.text)}</span>
+                ${f.score > 0 ? `<span style="margin-left:auto;opacity:0.5;font-size:0.75rem;flex-shrink:0">+${f.score}</span>` : ''}
+            </div>`).join('');
+    }
+
+    // Checks the file hash against VirusTotal and updates the UI with the result.
+    async function checkVT() {
+        if (!currentHash) return;
+        const btn = document.getElementById('vtBtn');
+        const res = document.getElementById('vtResult');
+        btn.disabled = true;
+        btn.textContent = 'Checking…';
+        res.style.display = 'none';
+
+        // Fetch VirusTotal data from the server-side API endpoint
+        try {
+            const r = await fetch(`/api/vt/${currentHash}`);
+            const data = await r.json();
+            res.style.display = 'block';
+            if (data.dailyLimit) {
+                res.className = 'vt-result vt-unknown';
+                res.innerHTML = `${esc(data.error)} ${upgradeLink('Pro')}`;
+            } else if (!data.available) {
+                res.className = 'vt-result vt-unknown';
+                res.innerHTML = 'VirusTotal API key not configured on this server. ' +
+                    `<a href="https://www.virustotal.com/gui/file/${currentHash}" target="_blank" rel="noopener" style="color:inherit">Search manually ↗</a>`;
+            } else if (!data.found) {
+                res.className = 'vt-result vt-unknown';
+                res.innerHTML = 'File not found in VirusTotal database, as it has never been submitted.';
+            } else if (data.malicious > 0) {
+                res.className = 'vt-result vt-danger';
+                res.innerHTML = `VirusTotal: <b>${esc(data.malicious)} / ${esc(data.total)}</b> engines flagged this file as malicious.` +
+                    (data.name ? ` Known as: <em>${esc(data.name)}</em>` : '') +
+                    ` <a href="${esc(data.link)}" target="_blank" rel="noopener" style="color:inherit">View report ↗</a>`;
+            } else {
+                res.className = 'vt-result vt-clean';
+                res.innerHTML = `VirusTotal: Clean: <b>0 / ${esc(data.total)}</b> engines detected a threat.` +
+                    ` <a href="${esc(data.link)}" target="_blank" rel="noopener" style="color:inherit">View report ↗</a>`;
+            }
+        } catch {
+            res.style.display = 'block';
+            res.className = 'vt-result vt-unknown';
+            res.innerHTML = 'Could not contact VirusTotal.';
+        }
+        btn.disabled = false;
+        btn.textContent = 'VirusTotal';
+    }
+
+    // Copies the current file's SHA-256 hash to the clipboard.
+    function copyHash() {
+        if (!currentHash) return;
+        navigator.clipboard.writeText(currentHash).catch(() => {});
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // Execution simulation
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    // Simulates running the PE file in a terminal-like interface, with delays and output.
+    async function runExe() {
+        // Check if the current PE metadata is valid and if the daily execution limit has been reached.
+        if (!currentMeta || !currentMeta.valid) return;
+        const statusEl = document.getElementById('runStatus');
+        if (!checkExeLimit(statusEl)) return;
+        _incDailyCount('exe');
+        const m = currentMeta;
+
+        // Show the terminal and clear previous output
+        const termWrap = document.getElementById('terminalWrap');
+        termWrap.style.display = 'block';
+        const term = document.getElementById('terminal');
+        term.innerHTML = '';
+        statusEl.textContent = 'Running…';
+
+        // Utility function to append a line of text to the terminal with optional CSS class.
+        function line(text, cls='') {
+            const span = document.createElement('span');
+            if (cls) span.className = cls;
+            span.textContent = text + '\n';
+            term.appendChild(span);
+            term.scrollTop = term.scrollHeight;
+        }
+        const delay = ms => new Promise(r => setTimeout(r, ms));
+
+        // Simulated execution steps with delays and output
+        line(`> Toolshed: PE Loader`, 't-dim');
+        line(`> Loading: ${m.fileName}`, 't-green');
+        await delay(180);
+        line(`> Verifying PE signature... OK`, 't-green');
+        await delay(100);
+        line(`> Architecture : ${m.machine}`, '');
+        line(`> Subsystem    : ${m.subsystem}`, '');
+        line(`> Bitness      : ${m.is64 ? '64-bit' : '32-bit'}`, '');
+        await delay(140);
+
+        // If the PE is a DLL, halt execution and display a message.
+        if (m.isDLL) {
+            line(`\n[!] This is a DLL - cannot be executed directly.`, 't-yellow');
+            line(`    DLLs are loaded by other executables as shared libraries.`, 't-dim');
+            document.getElementById('runStatus').textContent = 'Halted (DLL)';
+            await saveRun(); return;
+        }
+
+        // If the PE has imports, resolve them with simulated delays and output.
+        if (m.imports.length) {
+            await delay(120);
+            line(`\n> Resolving imports…`, '');
+            for (const dll of m.imports) {
+                await delay(30);
+                const known = ['kernel32.dll','ntdll.dll','user32.dll','advapi32.dll','msvcrt.dll',
+                            'vcruntime140.dll','ucrtbase.dll','msvcp140.dll'];
+                line(`    ${dll.padEnd(42)} ${known.includes(dll) ? '[OK]' : '[LOCATED]'}`,
+                    known.includes(dll) ? 't-dim' : '');
+            }
+        }
+
+        // If the PE has function imports, resolve them with simulated delays and output.
+        await delay(200);
+        line(`\n> Entry point reached.`, 't-green');
+
+        // Simulate console output or GUI behavior based on the subsystem type.
+        if (m.isConsole) {
+            await delay(160);
+            line(`\n--- Program Output ---`, 't-dim');
+            await simulateConsoleOutput(m, line, delay);
+        } else if (m.rawSubsys === 2) {
+            await delay(160);
+            line(`\n> Subsystem: Windows GUI`, 't-dim');
+            await delay(200);
+            line(`> Registering window class... OK`, 't-dim');
+            await delay(180);
+            line(`> Creating main window... OK`, 't-dim');
+            await delay(220);
+            line(`> Entering message loop.`, 't-green');
+            await delay(400);
+            line(`\n[i] Application is running in the background.`, 't-yellow');
+            line(`    Close the window to exit.`, 't-dim');
+        } else {
+            await delay(200);
+            line(`\n> Process completed.`, 't-green');
+        }
+
+        // Finalize the simulated execution with a delay and update the run status.
+        await delay(100);
+        line(`\n> Process exited with code 0.`, 't-green');
+        document.getElementById('runStatus').textContent = 'Exited (0)';
+        await saveRun();
+    }
+
+    // Simulates console output for a PE file, with different behavior based on .NET or CRT imports.
+    async function simulateConsoleOutput(m, line, delay) {
+        const name   = m.fileName.replace(/\.(exe|com)$/i, '');
+        const hasNet = m.imports.some(d => d.includes('clr') || d.includes('coreclr'));
+        const hasCrt = m.imports.some(d => d.includes('msvcrt') || d.includes('vcruntime') || d.includes('ucrtbase'));
+
+        if (hasNet) {
+            await delay(200); line(`.NET Runtime initializing…`, 't-dim');
+            await delay(280); line(`Assembly loaded: ${name}.exe`, '');
+            await delay(200); line(`Running Main()…`, '');
+            await delay(340); line(`Hello from ${name}!`, 't-green');
+        } else if (hasCrt) {
+            await delay(160); line(`${name} 1.0`, '');
+            await delay(120); line(`Copyright (c) All rights reserved.`, 't-dim');
+            await delay(200); line(``, '');
+            await delay(120); line(`Running…`, '');
+            await delay(320); line(`Done.`, 't-green');
+        } else {
+            await delay(200); line(`${name}: starting`, '');
+            await delay(300); line(`${name}: completed successfully`, 't-green');
+        }
+        await delay(100);
+        line(`--- End of Output ---`, 't-dim');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // Security threat warnings
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    // ── Threat detection helpers ─────────────────────────────────────────────────
+
+    // Checks if the PE imports a specific DLL (case-insensitive).
+    function hasDll(meta, dll) {
+        return (meta.imports || []).some(d => d.toLowerCase() === dll.toLowerCase());
+    }
+
+    // Checks if the PE imports any of the specified functions from a given DLL (case-insensitive).
+    function hasFuncs(meta, dll, fns) {
+        const fi = meta.funcImports || {};
+        const key = Object.keys(fi).find(k => k.toLowerCase() === dll.toLowerCase());
+        if (!key) return false;
+        const list = fi[key].map(f => f.toLowerCase());
+        return fns.some(f => list.includes(f.toLowerCase()));
+    }
+
+    // Returns the list of functions from a given DLL that match the specified function names (case-insensitive).
+    function getMatchedFuncs(meta, dll, fns) {
+        const fi = meta.funcImports || {};
+        const key = Object.keys(fi).find(k => k.toLowerCase() === dll.toLowerCase());
+        if (!key) return [];
+        const list = fi[key];
+        return fns.filter(f => list.some(l => l.toLowerCase() === f.toLowerCase()));
+    }
+
+    // Threat rules for detecting suspicious or malicious behavior based on imported functions and DLLs.
+    const THREAT_RULES = [
+        {
+            level: 'danger', name: 'Code injection',
+            match: m => hasFuncs(m, 'kernel32.dll', ['CreateRemoteThread','WriteProcessMemory']) &&
+                        hasFuncs(m, 'kernel32.dll', ['VirtualAllocEx']),
+            describe: m => {
+                const fns = getMatchedFuncs(m, 'kernel32.dll', ['CreateRemoteThread','WriteProcessMemory','VirtualAllocEx']);
+                return `Imports <strong>${fns.join(', ')}</strong>, the classic process injection triad: allocate memory in another process, write code to it, then execute it. There is no common legitimate use for this combination outside of debuggers and security tools.`;
+            }
+        },
+        {
+            level: 'danger', name: 'Global input hook',
+            match: m => hasFuncs(m, 'user32.dll', ['SetWindowsHookExA','SetWindowsHookExW','SetWindowsHookEx']),
+            describe: m => {
+                const isAccessibility = hasDll(m, 'oleacc.dll') ||
+                    hasFuncs(m, 'user32.dll', ['AccessibleObjectFromWindow','AccessibleChildren']);
+                if (isAccessibility) {
+                    return `Imports <strong>SetWindowsHookEx</strong> alongside accessibility libraries, which may be assistive software that monitors input for accessibility purposes. Verify whether this is an accessibility or automation tool before treating this as suspicious.`;
+                }
+                return `Imports <strong>SetWindowsHookEx</strong>, which registers a system-wide hook that intercepts every keyboard and mouse event across all applications. The primary mechanism used by keyloggers, though also legitimate in macro tools and input remappers. Combined with no accessibility-related imports here, the intent is worth scrutinising.`;
+            }
+        },
+        {
+            level: 'danger', name: 'Service installation',
+            match: m => hasFuncs(m, 'advapi32.dll', ['OpenSCManagerA','OpenSCManagerW','OpenSCManager']) &&
+                        hasFuncs(m, 'advapi32.dll', ['CreateServiceA','CreateServiceW','CreateService']),
+            describe: m => `Imports <strong>OpenSCManager + CreateService</strong>, which can install a Windows service that starts automatically at boot and runs with elevated privileges in the background. Rare in ordinary user applications; common in system utilities, installers, and malware persistence mechanisms. Verify the installer is from a trusted source.`
+        },
+        {
+            level: 'danger', name: 'Raw network sockets',
+            match: m => hasDll(m, 'ws2_32.dll') || hasDll(m, 'wsock32.dll'),
+            describe: m => {
+                const hasHighLevel = hasDll(m, 'wininet.dll') || hasDll(m, 'winhttp.dll');
+                const fns = getMatchedFuncs(m, 'ws2_32.dll', ['connect','recv','send','WSAConnect','bind','listen','accept']);
+                if (hasHighLevel) {
+                    return `Imports <strong>ws2_32.dll</strong> alongside high-level HTTP libraries; the low-level socket usage is likely for legitimate custom protocols (e.g. SSH, FTP, serial over network). Expected in terminal emulators, FTP clients, and similar network tools.`;
+                }
+                return `Imports <strong>ws2_32.dll</strong>, which uses raw TCP/UDP socket APIs${fns.length ? ` (${fns.join(', ')})` : ''}, bypassing the Windows HTTP stack. This makes network traffic harder to proxy or monitor, and is common in remote access tools. Legitimate for custom protocol software; less expected in everyday desktop apps.`;
+            }
+        },
+        {
+            level: 'warn', name: 'Network activity',
+            match: m => (hasDll(m, 'wininet.dll') || hasDll(m, 'winhttp.dll') || hasDll(m, 'urlmon.dll')) &&
+                        !(hasDll(m, 'ws2_32.dll') || hasDll(m, 'wsock32.dll')),
+            describe: m => {
+                const dll = hasDll(m, 'wininet.dll') ? 'WinINet' : hasDll(m, 'winhttp.dll') ? 'WinHTTP' : 'URLMON';
+                return `Imports <strong>${dll}</strong>, which can make HTTP/HTTPS requests. Normal for apps that check for updates, fetch data, or communicate with a service. The concern is whether those requests happen transparently or silently in the background without user knowledge.`;
+            }
+        },
+        {
+            level: 'warn', name: 'Registry modification',
+            match: m => hasFuncs(m, 'advapi32.dll', ['RegCreateKeyA','RegCreateKeyW','RegCreateKey',
+                                                    'RegSetValueA','RegSetValueW','RegSetValue',
+                                                    'RegSetValueExA','RegSetValueExW','RegSetValueEx']),
+            describe: m => {
+                const alsoReads = hasFuncs(m, 'advapi32.dll',
+                    ['RegQueryValueExA','RegQueryValueExW','RegQueryValueEx',
+                    'RegOpenKeyExA','RegOpenKeyExW','RegOpenKeyEx']);
+                if (alsoReads) {
+                    return `Reads and writes the Windows registry: this combination is characteristic of an application that saves and restores its own settings (window positions, preferences, sessions). Unlikely to be malicious on its own; the specific keys written at runtime determine the actual risk.`;
+                }
+                return `Imports registry write functions: can create or modify Windows registry keys. Common for persisting app preferences, but also used by malware to add startup entries (<code>HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run</code>) or alter system behaviour. Worth checking which keys it actually writes.`;
+            }
+        },
+        {
+            level: 'warn', name: 'Debugger detection',
+            match: m => hasFuncs(m, 'kernel32.dll', ['IsDebuggerPresent','CheckRemoteDebuggerPresent']),
+            describe: m => {
+                const both = hasFuncs(m, 'kernel32.dll', ['IsDebuggerPresent']) &&
+                            hasFuncs(m, 'kernel32.dll', ['CheckRemoteDebuggerPresent']);
+                if (both) {
+                    return `Imports both <strong>IsDebuggerPresent and CheckRemoteDebuggerPresent</strong>, using two independent methods to detect analysis. Using both is more deliberate than the single-call pattern common in production crash handlers, and is more characteristic of software that actively tries to resist inspection (copy protection or malware).`;
+                }
+                return `Imports <strong>IsDebuggerPresent</strong>, which checks at runtime whether a debugger is attached. Extremely common in C/C++ release builds for crash handling, assertion control, and performance modes. On its own this is a weak signal and is not indicative of malicious intent.`;
+            }
+        },
+        {
+            level: 'warn', name: 'Shell execution',
+            match: m => hasFuncs(m, 'shell32.dll', ['ShellExecuteA','ShellExecuteW','ShellExecuteExA','ShellExecuteExW']),
+            describe: m => {
+                const hasNetwork = hasDll(m, 'wininet.dll') || hasDll(m, 'winhttp.dll') || hasDll(m, 'ws2_32.dll');
+                if (hasNetwork) {
+                    return `Imports <strong>ShellExecute</strong> alongside network libraries, which could open files or URLs retrieved at runtime. This combination is worth scrutinising: the app may launch content it fetched from the internet without an explicit user action.`;
+                }
+                return `Imports <strong>ShellExecute</strong>, which uses the Windows shell to open files, URLs, or launch programs. Standard in virtually every GUI application that needs to open a help page, browser link, or file in Explorer. On its own this is a very weak signal.`;
+            }
+        },
+        {
+            level: 'warn', name: 'Process enumeration',
+            match: m => hasFuncs(m, 'kernel32.dll', ['CreateToolhelp32Snapshot']),
+            describe: m => {
+                const hasInject = hasFuncs(m, 'kernel32.dll', ['CreateRemoteThread','WriteProcessMemory']);
+                if (hasInject) {
+                    return `Imports <strong>CreateToolhelp32Snapshot</strong> alongside injection functions, which likely enumerates processes to locate a target to inject into. This combination is a strong indicator of invasive or malicious behaviour.`;
+                }
+                return `Imports <strong>CreateToolhelp32Snapshot</strong>, which enumerates all running processes. Common in task managers, system monitors, and security software. On its own it is not malicious, but paired with other suspicious imports it suggests the app is actively aware of its environment.`;
+            }
+        },
+        {
+            level: 'warn', name: 'Cryptography',
+            match: m => hasDll(m, 'crypt32.dll') || hasDll(m, 'bcrypt.dll') || hasDll(m, 'ncrypt.dll'),
+            describe: m => {
+                const dlls = ['crypt32.dll','bcrypt.dll','ncrypt.dll'].filter(d => hasDll(m, d));
+                const hasNetwork = hasDll(m, 'wininet.dll') || hasDll(m, 'winhttp.dll') || hasDll(m, 'ws2_32.dll');
+                if (hasNetwork) {
+                    return `Imports <strong>${dlls.join(', ')}</strong> alongside network libraries (encryption over a network connection). Normal for secure protocols (HTTPS, SSH), but the same pattern appears in malware that encrypts exfiltrated data or C2 communications.`;
+                }
+                return `Imports <strong>${dlls.join(', ')}</strong>, which uses Windows cryptographic APIs. Common in apps that protect stored credentials, sign data, or implement secure storage. Alone this is not suspicious.`;
+            }
+        },
+    ];
+
+    // ── Warning toast UI ─────────────────────────────────────────────────────────
+
+    let _warnLog = [];
+    const WARN_FADE_MS = 9000;
+
+    // Dismisses a warning toast with a fade-out animation.
+    function dismissWarn(el) {
+        el.classList.add('fading');
+        setTimeout(() => { if (el.isConnected) el.remove(); }, 650);
+    }
+
+    // Downloads the current warning log as a text file, if any warnings are present.
+    function downloadWarnings() {
+        if (!_warnLog.length) return;
+        const fname = (currentMeta && currentMeta.fileName) ? currentMeta.fileName.replace(/\.[^.]+$/, '') : 'file';
+        const lines = [
+            `Security report: ${fname}`,
+            `Generated by Toolshed`,
+            '='.repeat(50),
+            '',
+            ..._warnLog.map((w, i) =>
+                `[${w.level.toUpperCase()}] ${w.name}\n${w.detail}\n`
+            )
+        ];
+        const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fname + '_warnings.txt';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    // Displays the threat warnings in the UI based on the current PE metadata.
+    function showThreats(meta) {
+        const stack = document.getElementById('warnStack');
+        stack.innerHTML = '';
+        _warnLog = [];
+        const hits = THREAT_RULES.filter(r => r.match(meta));
+        const dlRow = document.getElementById('warnDownloadRow');
+        if (!hits.length) { if (dlRow) dlRow.style.display = 'none'; return; }
+
+        hits.forEach((r, i) => {
+            const detail = r.describe(meta);
+            _warnLog.push({ level: r.level, name: r.name, detail: detail.replace(/<[^>]+>/g, '') });
+
+            const div = document.createElement('div');
+            div.className = `warn-toast level-${r.level}`;
+            div.style.setProperty('--warn-dur', WARN_FADE_MS + 'ms');
+            div.innerHTML = `<button class="warn-x" title="Dismiss" onclick="dismissWarn(this.parentElement)">✕</button><strong>${r.name}</strong>${detail}<div class="warn-bar"></div>`;
+            stack.appendChild(div);
+
+            setTimeout(() => { if (div.isConnected) dismissWarn(div); }, WARN_FADE_MS + i * 800);
+        });
+
+        if (dlRow) dlRow.style.display = hits.length ? 'block' : 'none';
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // History & persistence
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    // Saves the current PE metadata to the server-side history database.
+    async function saveRun() {
+        if (!currentMeta || !currentMeta.valid) return;
+        const m = currentMeta;
+        try {
+            const r = await fetch('/api/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileName: m.fileName, fileSize: m.fileSize,
+                    architecture: m.machine, subsystem: m.subsystem,
+                    isDLL: m.isDLL, sections: m.sections, imports: m.imports
+                })
+            });
+            if (r.ok) {
+                const d = await r.json();
+                appendHistoryRow(d.id, m.fileName, m.machine, m.subsystem);
+            }
+        } catch {}
+    }
+
+    // Appends a new row to the history list in the UI with the given metadata.
+    function appendHistoryRow(id, fileName, arch, subsys) {
+        const list = document.getElementById('historyList');
+        if (!list) return;
+        list.querySelector('.empty-state')?.remove();
+        const div = document.createElement('div');
+        div.className = 'history-row'; div.id = 'hr-' + id;
+        div.innerHTML = `
+            <span class="hr-name">${esc(fileName)}</span>
+            <span class="hr-meta">${esc(arch)} &middot; ${esc(subsys)}</span>
+            <span class="hr-meta">${new Date().toLocaleDateString()}</span>
+            <button class="hr-del" onclick="deleteRun('${esc(id)}')">✕</button>`;
+        list.prepend(div);
+    }
+
+    // Deletes a run from the server-side history database and removes it from the UI.
+    async function deleteRun(id) {
+        await fetch('/api/run/' + id, { method: 'DELETE' });
+        document.getElementById('hr-' + id)?.remove();
+    }
+
+    // Clears the current analysis and resets the UI to its initial state.
+    function clearAll() {
+        currentMeta = currentHash = currentBuf = null;
+        document.getElementById('analysisSection').style.display = 'none';
+        const tw = document.getElementById('terminalWrap');
+        tw.style.display = 'none'; tw.removeAttribute('open');
+        document.getElementById('terminal').innerHTML = '';
+        document.getElementById('scanCard').style.display        = 'none';
+        document.getElementById('emuSection').style.display      = 'none';
+        document.getElementById('warnStack').innerHTML           = '';
+        const _dlRow = document.getElementById('warnDownloadRow');
+        if (_dlRow) _dlRow.style.display = 'none';
+        _warnLog = [];
+        stopEmulator();
+        fileInput.value = '';
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // Boxedwine emulator integration
+    // ══════════════════════════════════════════════════════════════════════════════
+    //
+    // Boxedwine (https://github.com/danoon2/Boxedwine) is a Wine-based x86
+    // emulator compiled to WebAssembly via Emscripten. It can run many real
+    // Windows EXE files in the browser.
+    //
+    // Setup: download the web build from Boxedwine GitHub Releases and place:
+    //   public/boxedwine/boxedwine.js
+    //   public/boxedwine/boxedwine.wasm
+    // (Wine system files are fetched by Boxedwine automatically from its CDN.)
+    //
+    // The API follows the standard Emscripten Module pattern.
+
+    let _bwRunning = false;
+
+    // Logs a message to the emulator log area in the UI.
+    function emuLog(msg) {
+        const wrap = document.getElementById('emuLogWrap');
+        const el = document.getElementById('emuLog');
+        if (!el) return;
+        if (wrap) wrap.style.display = 'block';
+        el.textContent += msg + '\n';
+        el.scrollTop = el.scrollHeight;
+    }
+
+    const EMU_BASE = '/boxedwine/SingleThreaded/';
+
+    // Checks if the Boxedwine web build is available on the server by sending a HEAD request to 'boxedwine.js'.
+    async function boxedWineAvailable() {
+        try {
+            const r = await fetch(EMU_BASE + 'boxedwine.js', { method: 'HEAD' });
+            return r.ok;
+        } catch { return false; }
+    }
+
+    // Renders a message in the emulator section of the UI indicating that the Boxedwine web build is not set up, along with instructions for downloading and extracting it.
+    function renderEmuSetup() {
+        document.getElementById('emuContent').innerHTML = `
+            <div class="emu-setup">
+                <strong>Emulator not set up</strong><br><br>
+                The Boxedwine web build is missing from <code>public/boxedwine/</code>.<br><br>
+                <ol style="margin:8px 0 8px 18px;line-height:1.8">
+                    <li>Go to <a href="https://github.com/danoon2/Boxedwine/releases" target="_blank" rel="noopener" style="color:var(--link-color)">Boxedwine GitHub Releases</a></li>
+                    <li>Download the latest web build zip</li>
+                    <li>Extract the full zip into <code>public/boxedwine/</code> - you should end up with
+                        <code>public/boxedwine/SingleThreaded/</code> and
+                        <code>public/boxedwine/MultiThreaded/</code> folders</li>
+                    <li>Restart the server</li>
+                </ol>
+            </div>`;
+    }
+
+    // Build the srcdoc HTML for the emulator iframe.
+    // The iframe receives file data via postMessage, sets window.Module with
+    // the correct Boxedwine args, fetches boxedwine.zip (Wine root), then
+    // loads boxedwine.js from the server.
+    function buildEmuDoc() {
+        return `<!DOCTYPE html>
+        <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                *{margin:0;padding:0;box-sizing:border-box}
+                body{background:#000;overflow:hidden;width:100vw;height:100vh}
+                canvas{display:block;width:100%;height:100%}
+                #log{position:fixed;bottom:0;left:0;right:0;max-height:35%;overflow:auto;
+                    background:rgba(0,0,0,.88);color:#0f0;font:11px/1.5 'Courier New',monospace;
+                    padding:6px 10px;white-space:pre-wrap;pointer-events:none;display:none}
+                </style>
+            </head>
+
+            <body>
+                <canvas id="canvas" tabindex="0" oncontextmenu="return false"></canvas>
+                <div id="log"></div>
+
+                <script>
+                var logEl=document.getElementById('log');
+
+                function lg(t){
+                    logEl.style.display='block';
+                    logEl.textContent+=t+'\\n';
+                    logEl.scrollTop=9e9;
+                    try{
+                        parent.postMessage({type:'emu-log',msg:t},'*');
+                    }
+                    catch(e){}
+
+                    if(t.indexOf('Could not find /bin/wine')!==-1){
+                        try{parent.postMessage({type:'emu-no-wine-root'},'*');}catch(e){}
+                    }
+                    if(t.indexOf('64-bit application not supported')!==-1){
+                        try{parent.postMessage({type:'emu-64bit'},'*');}catch(e){}
+                    }
+                }
+                
+                // Listen for the parent window to send the 'emu-init' message with the EXE name and file data.
+                window.addEventListener('message',function(ev){
+                if(!ev.data||ev.data.type!=='emu-init')return;
+                var exeName=ev.data.exeName.replace(/\\\\/g,'/');
+                var files=ev.data.files;
+                lg('Files received: '+Object.keys(files).length+', launching: '+exeName);
+
+                // Compute working dir and base exe filename from path
+                var slashIdx=exeName.lastIndexOf('/');
+                var exeFile=slashIdx>=0?exeName.substring(slashIdx+1):exeName;
+                var exeSubdir=slashIdx>=0?exeName.substring(0,slashIdx+1):'';
+                var wineWD='/home/username/.wine/dosdevices/d:/'+exeSubdir;
+
+                // Set up the Boxedwine Module with the correct arguments and callbacks.
+                window.Module={
+                    canvas: document.getElementById('canvas'),
+                    locateFile: function(f){ return '/boxedwine/SingleThreaded/'+f; },
+                    
+                    print:    function(t){ lg(t); },
+                    printErr: function(t){ if(t.indexOf('registerOrRemoveHandler')===-1) lg('[E] '+t); },
+                    arguments: ['-root','/root','-zip','boxedwine.zip','-mount_drive','/d_drive','d','-w',wineWD,'/bin/wine',exeFile],
+
+                    setStatus: function(t){ if(t) lg(t); },
+
+                    totalDependencies: 0,
+                    monitorRunDependencies: function(n){
+                        this.totalDependencies=Math.max(this.totalDependencies,n);
+                        if(n>0) lg('Downloading ('+(this.totalDependencies-n)+'/'+this.totalDependencies+')...');
+                    },
+
+                    preRun: [function(){
+                        // preRun fires after Emscripten init but before main(). FS is available here.
+
+                        // addRunDependency pauses Wine from starting until we release it.
+                        Module.addRunDependency('bwSetup');
+                        try{ FS.mkdir('/root'); }catch(e){}
+                        try{ FS.mkdir('/d_drive'); }catch(e){}
+
+                        // Write app files to /d_drive (mapped to Wine's D: drive)
+                        var names=Object.keys(files);
+                        lg('Mounting '+names.length+' file(s) to D: drive...');
+                        for(var i=0;i<names.length;i++){
+                            var p=names[i].replace(/\\\\/g,'/');
+                            var parts=p.split('/');
+                            var dir='/d_drive';
+                            for(var j=0;j<parts.length-1;j++){
+                            try{ FS.mkdir(dir+'/'+parts[j]); }catch(e2){}
+                            dir=dir+'/'+parts[j];
+                            }
+                            try{ FS.createDataFile(dir,parts[parts.length-1],new Uint8Array(files[names[i]]),true,true); }
+                            catch(e){ lg('warn '+p+': '+e.message); }
+                        }
+
+                        // Fetch Wine root filesystem (boxedwine.zip) from the server
+                        lg('Fetching Wine root...');
+                        var xhr=new XMLHttpRequest();
+                        xhr.open('GET','/boxedwine/SingleThreaded/boxedwine.zip',true);
+                        xhr.responseType='arraybuffer';
+                        xhr.onload=function(){
+                            if(xhr.status===200){
+                                try{
+                                    FS.createDataFile('/','boxedwine.zip',new Uint8Array(xhr.response),true,true);
+                                    lg('Wine root loaded, starting...');
+                                }
+                                catch(e){ lg('FS error: '+e.message); }
+                            }
+                            else{
+                                lg('ERROR: boxedwine.zip not found on server (HTTP '+xhr.status+')');
+                                try{parent.postMessage({type:'emu-no-wine-root'},'*');}catch(e2){}
+                            }
+                            Module.removeRunDependency('bwSetup');
+                        };
+                        xhr.onerror=function(){
+                            lg('ERROR: Network error fetching boxedwine.zip');
+                            try{parent.postMessage({type:'emu-no-wine-root'},'*');}catch(e){}
+                            Module.removeRunDependency('bwSetup');
+                        };
+                        xhr.send();
+                    }]
+                };
+                var s=document.createElement('script');
+                s.src='/boxedwine/SingleThreaded/boxedwine.js';
+                s.onerror=function(){ lg('ERROR: could not load boxedwine.js'); };
+                document.head.appendChild(s);
+                document.getElementById('canvas').focus();
+                });
+                <\/script>
+            </body>
+        </html>`;
+    }
+
+    // Creates a fresh iframe for the emulator. Each call destroys any previous
+    // iframe so re-runs always start from a clean Emscripten state.
+    async function initBoxedWine(exeName, allFiles) {
+        stopEmulator();
+
+        const frame = document.createElement('iframe');
+        frame.id    = 'bwFrame';
+        frame.style.cssText = 'width:100%;height:580px;border:none;border-radius:6px;display:block;background:#000';
+        frame.setAttribute('allow', 'fullscreen; pointer-lock');
+        frame.srcdoc = buildEmuDoc();
+
+        document.getElementById('emuContent').innerHTML = '';
+        document.getElementById('emuContent').appendChild(frame);
+        const _ewInit = document.getElementById('emuLogWrap');
+        const _elogInit = document.getElementById('emuLog');
+        if (_ewInit) { _ewInit.style.display = 'none'; _ewInit.removeAttribute('open'); }
+        if (_elogInit) _elogInit.textContent = '';
+
+        // Mirror iframe log messages into the emuLog panel
+        const onMsg = function(ev) {
+            if (ev.source !== frame.contentWindow) return;
+            if (ev.data && ev.data.type === 'emu-log') emuLog(ev.data.msg);
+            if (ev.data && ev.data.type === 'emu-64bit') {
+                document.getElementById('emuContent').innerHTML = `
+                    <div class="emu-setup">
+                        <strong>64-bit apps are not supported</strong><br><br>
+                        Boxedwine runs a 32-bit Wine prefix and cannot execute 64-bit Windows
+                        applications. Only 32-bit (x86) EXEs will run.<br><br>
+                        Many older games and tools are 32-bit - try a different executable.
+                    </div>`;
+            }
+            if (ev.data && ev.data.type === 'emu-no-wine-root') {
+                document.getElementById('emuContent').innerHTML = `
+                    <div class="emu-setup">
+                        <strong>Wine root filesystem missing</strong><br><br>
+                        <code>public/boxedwine/SingleThreaded/boxedwine.zip</code> could not be loaded.
+                        This file contains the Wine system files and is required to run EXEs.<br><br>
+                        Make sure you have extracted the full Boxedwine web release zip into
+                        <code>public/boxedwine/</code> so that
+                        <code>SingleThreaded/boxedwine.zip</code> exists, then restart the server.
+                    </div>`;
+            }
+        };
+        window.addEventListener('message', onMsg);
+        frame._cleanup = function() { window.removeEventListener('message', onMsg); };
+
+        // Send file data once the iframe document has parsed
+        frame.addEventListener('load', function() {
+            const bufs = {}, xfer = [];
+            for (const [name, data] of Object.entries(allFiles)) {
+                const ab = (data.buffer ? data.buffer : data).slice(0);
+                bufs[name] = ab;
+                xfer.push(ab);
+            }
+            try {
+                frame.contentWindow.postMessage({ type: 'emu-init', exeName, files: bufs }, '*', xfer);
+            } catch(e) {
+                emuLog('Transfer failed: ' + e.message);
+            }
+        });
+
+        _bwRunning = true;
+    }
+
+    // Launches the emulator for the current EXE, handling 32-bit and 64-bit cases.
+    async function launchEmulator() {
+        const statusEl = document.getElementById('runStatus');
+        if (!checkExeLimit(statusEl)) return;
+        if (!currentMeta || !currentMeta.valid) {
+            statusEl.textContent = 'Drop a valid EXE first.';
+            setTimeout(() => { statusEl.textContent = ''; }, 2500);
+            return;
+        }
+        if (currentMeta.isDLL) {
+            statusEl.textContent = 'Cannot run a DLL directly.';
+            setTimeout(() => { statusEl.textContent = ''; }, 2500);
+            return;
+        }
+        if (currentMeta.is64) {
+            const emuSection = document.getElementById('emuSection');
+            emuSection.style.display = 'block';
+            emuSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const w64check = await fetch('/api/wine64/check').then(r => r.json()).catch(() => ({ available: false }));
+            if (!w64check.available) {
+                document.getElementById('emuContent').innerHTML =
+                    `<div style="padding:20px;font-size:0.88rem;line-height:1.6;opacity:0.7">
+                        <strong style="opacity:1">64-bit executable detected</strong><br>
+                        Running 64-bit Windows apps requires Wine64, which is only available on a Linux server
+                        with <code>wine64</code> installed or with Docker. Wine64 is not set up on this server.
+                    </div>`;
+                return;
+            }
+            _incDailyCount('exe');
+            runWine64Server();
+            return;
+        }
+
+        const emuSection = document.getElementById('emuSection');
+        emuSection.style.display = 'block';
+        document.getElementById('emuContent').innerHTML =
+            '<div style="padding:20px;color:var(--link-color)">Checking emulator...</div>';
+        emuSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        const avail = await boxedWineAvailable();
+        if (!avail) { renderEmuSetup(); return; }
+
+        _incDailyCount('exe');
+        await initBoxedWine(currentMeta.fileName, { [currentMeta.fileName]: new Uint8Array(currentBuf) });
+    }
+
+    // 64-bit Wine server runner: sends the EXE to the server and streams logs back to the UI.
+    async function runWine64Server() {
+        if (!currentMeta || !currentBuf) return;
+
+        const content = document.getElementById('emuContent');
+        content.innerHTML = `
+            <div style="padding:16px">
+                <div style="font-size:0.85rem;opacity:0.6;margin-bottom:10px">Uploading to Wine64 server…</div>
+                <div id="w64log" style="height:380px;overflow-y:auto;background:var(--code-bg-color);border-radius:6px;padding:12px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all"></div>
+            </div>`;
+        const logEl = document.getElementById('w64log');
+        const log = msg => { logEl.textContent += msg; logEl.scrollTop = logEl.scrollHeight; };
+
+        // Send the EXE to the server for execution and stream logs back to the UI.
+        try {
+            // Send the EXE to the server for execution and stream logs back to the UI.
+            const resp = await fetch('/api/wine64/run?name=' + encodeURIComponent(currentMeta.fileName), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                body: currentBuf
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ error: 'Server error ' + resp.status }));
+                log('[Error] ' + (err.error || 'Failed') + '\n');
+                return;
+            }
+            const reader = resp.body.getReader();
+            const dec = new TextDecoder();
+            let buf = '';
+
+            // Read the streaming response and parse log messages line by line.
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += dec.decode(value, { stream: true });
+                const parts = buf.split('\n\n');
+                buf = parts.pop();
+                for (const part of parts) {
+                    if (!part.startsWith('data: ')) continue;
+                    try {
+                        const d = JSON.parse(part.slice(6));
+                        if (d.type === 'log') log(d.msg);
+                        else if (d.type === 'error') log('[Error] ' + d.msg + '\n');
+                    } catch {}
+                }
+            }
+        }
+        catch (err) {
+            log('[Error] ' + err.message + '\n');
+        }
+    }
+
+    // Stops the emulator and cleans up the iframe and log area.
+    function stopEmulator() {
+        _bwRunning = false;
+        const frame = document.getElementById('bwFrame');
+        if (frame) {
+            if (frame._cleanup) frame._cleanup();
+            frame.srcdoc = '';
+            frame.remove();
+        }
+        const _ec = document.getElementById('emuContent');
+        const _ew = document.getElementById('emuLogWrap');
+        const _el = document.getElementById('emuLog');
+        if (_ec) _ec.innerHTML = '';
+        if (_ew) { _ew.style.display = 'none'; _ew.removeAttribute('open'); }
+        if (_el) _el.textContent = '';
+    }
+
+    // Toggles the emulator iframe into fullscreen mode, using the appropriate browser API.
+    function emuFullscreen() {
+        const frame = document.getElementById('bwFrame');
+        if (!frame) return;
+        if (frame.requestFullscreen)            frame.requestFullscreen();
+        else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // ZIP runner - extract and run multi-file apps (e.g. UNDERTALE)
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    let _zipFiles = {};   // { 'relative/path': Uint8Array }
+
+    // Load fflate library for ZIP extraction if not already loaded.
+    async function loadFflate() {
+        if (window.fflate) return;
+        await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
+            s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+        });
+    }
+
+    // Set up drag-and-drop and file input for ZIP files.   
+    const zipZone  = document.getElementById('zipZone');
+    const zipInput = document.getElementById('zipInput');
+
+    zipZone.addEventListener('dragover',  e => { e.preventDefault(); zipZone.classList.add('drag-over'); });
+    zipZone.addEventListener('dragleave', () => zipZone.classList.remove('drag-over'));
+    zipZone.addEventListener('drop', e => {
+        e.preventDefault(); zipZone.classList.remove('drag-over');
+        const f = e.dataTransfer.files[0];
+        if (f && f.name.toLowerCase().endsWith('.zip')) loadZip(f);
+    });
+    zipInput.addEventListener('change', () => {
+        if (zipInput.files[0]) loadZip(zipInput.files[0]);
+    });
+
+    // Extracts the ZIP file, populates the file tree and EXE selector, and prepares for running in the emulator.
+    async function loadZip(file) {
+        const zipInfo = document.getElementById('zipInfo');
+        const zipTree = document.getElementById('zipTree');
+        zipInfo.style.display = 'none';
+        zipTree.innerHTML = '<span style="color:var(--link-color)">Extracting…</span>';
+
+        // Load fflate and unzip the file, handling errors and populating the UI with the extracted files.
+        try {
+            await loadFflate();
+            const buf = await file.arrayBuffer();
+            const extracted = await new Promise((res, rej) =>
+                fflate.unzip(new Uint8Array(buf), (err, files) => err ? rej(err) : res(files))
+            );
+
+            _zipFiles = {};
+            const exes = [];
+            const rows = [];
+
+            // Sort for display: directories first, then by name
+            const entries = Object.entries(extracted).sort(([a],[b]) => a.localeCompare(b));
+
+            for (const [path, data] of entries) {
+                // Skip macOS resource-fork junk
+                if (path.includes('__MACOSX') || path.endsWith('/')) continue;
+                _zipFiles[path] = data;
+                const isExe = /\.(exe|com)$/i.test(path);
+                if (isExe) exes.push(path);
+                rows.push(`<div class="zip-tree-item${isExe ? ' is-exe' : ''}">
+                    <span>${isExe ? '▶' : '·'}</span>
+                    <span style="word-break:break-all">${esc(path)}</span>
+                    <span class="zt-size">${fmtSize(data.byteLength)}</span>
+                </div>`);
+            }
+
+            // Populate EXE selector
+            const sel = document.getElementById('zipExeSelect');
+            sel.innerHTML = exes.length
+                ? exes.map(p => `<option value="${esc(p)}">${esc(p.split('/').pop())}</option>`).join('')
+                : '<option value="">No EXE found</option>';
+            document.getElementById('zipRunBtn').disabled = !exes.length;
+
+            document.getElementById('zipName').textContent = file.name;
+            document.getElementById('zipFileCount').textContent =
+                `${Object.keys(_zipFiles).length} files · ${exes.length} executables`;
+            zipTree.innerHTML = rows.join('') || '<span style="opacity:0.5">Empty archive</span>';
+            zipInfo.style.display = 'block';
+        } catch(e) {
+            zipTree.innerHTML = `<span style="color:#ff6b6b">Failed to extract: ${esc(e.message)}</span>`;
+            zipInfo.style.display = 'block';
+        }
+    }
+
+    // Launches the selected EXE from the ZIP in the Boxedwine emulator, handling daily limits and setup checks.
+    async function runZipInEmulator() {
+        const exePath = document.getElementById('zipExeSelect').value;
+        if (!exePath || !_zipFiles[exePath]) return;
+        const zipStatusEl = document.getElementById('zipRunBtn');
+        if (!checkExeLimit(null)) {
+            const lim = _DAILY_LIMITS[USER_PLAN] ?? _DAILY_LIMITS.free;
+            zipStatusEl.insertAdjacentHTML('afterend',
+                `<span style="font-size:0.8rem;color:var(--link-color);margin-left:8px">
+                    Daily limit reached (${lim.exe} runs). ${upgradeLink('Pro')}
+                </span>`);
+            return;
+        }
+        const emuSection = document.getElementById('emuSection');
+        emuSection.style.display = 'block';
+        document.getElementById('emuContent').innerHTML =
+            '<div style="padding:20px;color:var(--link-color)">Checking emulator...</div>';
+        emuSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        const avail = await boxedWineAvailable();
+        if (!avail) { renderEmuSetup(); return; }
+        _incDailyCount('exe');
+
+        // Strip common top-level folder prefix so paths inside the VM are clean
+        const keys   = Object.keys(_zipFiles);
+        const prefix = (() => {
+            if (keys.length <= 1) return '';
+            const parts = keys[0].split('/');
+            let p = '';
+            for (let i = 0; i < parts.length - 1; i++) {
+                const c = parts.slice(0, i + 1).join('/') + '/';
+                if (keys.every(k => k.startsWith(c))) p = c; else break;
+            }
+            return p;
+        })();
+
+        const allFiles = {};
+        for (const [path, data] of Object.entries(_zipFiles))
+            allFiles[prefix ? path.slice(prefix.length) : path] = data;
+        const shortExe = prefix ? exePath.slice(prefix.length) : exePath;
+
+        await initBoxedWine(shortExe, allFiles);
+    }
+</script>

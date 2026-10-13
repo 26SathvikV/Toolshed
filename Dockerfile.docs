@@ -1,0 +1,17 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -q && \
+    apt-get install -y --no-install-recommends \
+        libreoffice-writer \
+        libreoffice-calc \
+        libreoffice-impress \
+        libreoffice-draw \
+        fonts-liberation \
+        fonts-dejavu-core \
+        && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash converter
+USER converter
+WORKDIR /home/converter

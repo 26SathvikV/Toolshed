@@ -1,0 +1,787 @@
+<!--
+    Tools Page
+    This page provides various encoding, text, and number utilities that run entirely in the user's browser. It includes tools for Base64 encoding/decoding, URL encoding, text transformations, number base conversions, hash generation, timestamp conversions, Markdown editing, and color format conversions.
+-->
+
+<!-- Tools Page Styles -->
+<style>
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .tool-card {
+        background: var(--form-bg-color);
+        border: 1px solid var(--form-border-color);
+        border-radius: 10px;
+        padding: 24px;
+        margin-bottom: 20px;
+    }
+
+    .tool-row {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .tool-col { flex: 1; min-width: 200px; }
+
+    .tool-arrow {
+        display: flex;
+        align-items: center;
+        padding-top: 32px;
+        font-size: 1.4rem;
+        color: var(--link-color);
+        flex-shrink: 0;
+    }
+
+    textarea.mono {
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+        width: 100%;
+        min-height: 160px;
+        resize: vertical;
+        box-sizing: border-box;
+    }
+
+    .tool-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+
+    .result-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--link-color);
+        margin-bottom: 6px;
+    }
+
+    .stat-box {
+        display: flex;
+        gap: 24px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+    }
+    .stat-item .result-label { margin-bottom: 2px; }
+    .stat-value { font-size: 1.4rem; color: var(--heading-color); }
+
+    .base-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+    @media (max-width: 600px) { .base-grid { grid-template-columns: 1fr; } }
+
+    .md-split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+    @media (max-width: 700px) { .md-split { grid-template-columns: 1fr; } }
+
+    #mdPreview {
+        line-height: 1.65;
+        color: var(--text-color);
+        min-height: 80px;
+    }
+    #mdPreview h1,#mdPreview h2,#mdPreview h3,#mdPreview h4 { color: var(--heading-color); margin-top: 0.8em; }
+    #mdPreview pre { background: var(--code-bg-color); border-radius: 5px; padding: 10px; overflow-x: auto; }
+    #mdPreview code { font-family: 'Courier New', monospace; font-size: 13px; background: var(--code-bg-color); padding: 1px 4px; border-radius: 3px; }
+    #mdPreview pre code { background: none; padding: 0; }
+    #mdPreview blockquote { border-left: 3px solid var(--link-color); margin: 0; padding-left: 14px; color: var(--link-color); }
+    #mdPreview table { border-collapse: collapse; width: 100%; }
+    #mdPreview th,#mdPreview td { border: 1px solid var(--form-border-color); padding: 6px 10px; }
+    #mdPreview th { background: var(--table-header-bg-color); }
+</style>
+
+<!-- Tools Page Content -->
+<h2>Tools</h2>
+<p style="text-align:center;color:var(--link-color);margin-bottom:24px;">
+    Encoding, text, and number utilities
+</p>
+
+<div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('base64',this)">Base64</button>
+    <button class="tab-btn" onclick="switchTab('url',this)">URL Encoding</button>
+    <button class="tab-btn" onclick="switchTab('text',this)">Text</button>
+    <button class="tab-btn" onclick="switchTab('numbers',this)">Numbers</button>
+    <button class="tab-btn" onclick="switchTab('hash',this)">Hash</button>
+    <button class="tab-btn" onclick="switchTab('timestamp',this)">Timestamp</button>
+    <button class="tab-btn" onclick="switchTab('markdown',this)">Markdown</button>
+    <button class="tab-btn" onclick="switchTab('color',this)">Color</button>
+</div>
+
+<!-- BASE64 -->
+<div id="tab-base64" class="tab-content active">
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Base64 Encode / Decode</h3>
+        <div class="tool-row">
+            <div class="tool-col">
+                <div class="result-label">Plain Text</div>
+                <textarea class="mono" id="b64In" placeholder="Enter text to encode…"></textarea>
+                <div class="tool-actions">
+                    <button onclick="b64Encode()">Encode →</button>
+                    <button onclick="b64Decode()" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">← Decode</button>
+                </div>
+            </div>
+            <div class="tool-col">
+                <div class="result-label">Base64</div>
+                <textarea class="mono" id="b64Out" placeholder="Base64 output…"></textarea>
+                <div class="tool-actions">
+                    <button onclick="copyText('b64Out')" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">Copy</button>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top:12px">
+            <label style="font-size:0.85rem;color:var(--link-color)">
+                <input type="checkbox" id="b64FileMode" style="width:auto;padding:0;border:none"> Encode a file to Base64
+            </label>
+            <input type="file" id="b64File" style="display:none;margin-top:8px;width:100%;box-sizing:border-box" onchange="b64EncodeFile()">
+        </div>
+    </div>
+</div>
+
+<!-- URL ENCODING -->
+<div id="tab-url" class="tab-content">
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">URL Encoding</h3>
+        <div class="tool-row">
+            <div class="tool-col">
+                <div class="result-label">Decoded</div>
+                <textarea class="mono" id="urlIn" placeholder="hello world / path?q=1&r=2"></textarea>
+            </div>
+            <div class="tool-arrow">&#8644;</div>
+            <div class="tool-col">
+                <div class="result-label">URL Encoded</div>
+                <textarea class="mono" id="urlOut" placeholder="Output…"></textarea>
+            </div>
+        </div>
+        <div class="tool-actions">
+            <button onclick="urlEncode()">Encode →</button>
+            <button onclick="urlDecode()" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">← Decode</button>
+            <button onclick="copyText('urlOut')" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">Copy</button>
+        </div>
+    </div>
+
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">HTML Entity Encoding</h3>
+        <div class="tool-row">
+            <div class="tool-col">
+                <div class="result-label">Plain Text</div>
+                <textarea class="mono" id="htmlIn" placeholder='<div class="hello">World & friends</div>'></textarea>
+            </div>
+            <div class="tool-arrow">&#8644;</div>
+            <div class="tool-col">
+                <div class="result-label">HTML Entities</div>
+                <textarea class="mono" id="htmlOut" placeholder="Output…"></textarea>
+            </div>
+        </div>
+        <div class="tool-actions">
+            <button onclick="htmlEncode()">Encode →</button>
+            <button onclick="htmlDecode()" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">← Decode</button>
+            <button onclick="copyText('htmlOut')" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">Copy</button>
+        </div>
+    </div>
+</div>
+
+<!-- TEXT -->
+<div id="tab-text" class="tab-content">
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Text Transformer</h3>
+        <div class="form-group">
+            <label>Input text</label>
+            <textarea class="mono" id="textIn" placeholder="Enter text…" style="min-height:120px"></textarea>
+        </div>
+        <div class="tool-actions" style="flex-wrap:wrap">
+            <button onclick="textTransform('upper')">UPPERCASE</button>
+            <button onclick="textTransform('lower')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">lowercase</button>
+            <button onclick="textTransform('title')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">Title Case</button>
+            <button onclick="textTransform('sentence')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">Sentence case</button>
+            <button onclick="textTransform('camel')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">camelCase</button>
+            <button onclick="textTransform('snake')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">snake_case</button>
+            <button onclick="textTransform('kebab')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">kebab-case</button>
+            <button onclick="textTransform('reverse')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">Reverse</button>
+            <button onclick="textTransform('lines')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">Sort Lines</button>
+            <button onclick="textTransform('dedup')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">Remove Duplicates</button>
+            <button onclick="textTransform('trim')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">Trim Lines</button>
+            <button onclick="textTransform('removeEmpty')" style="background:var(--table-header-bg-color);color:var(--text-color);border:1px solid var(--form-border-color)">Remove Empty Lines</button>
+        </div>
+        <div style="margin-top:16px">
+            <div class="result-label">Output</div>
+            <textarea class="mono" id="textOut" readonly style="min-height:120px" placeholder="Result…"></textarea>
+        </div>
+        <div class="tool-actions">
+            <button onclick="copyText('textOut')" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">Copy</button>
+            <button onclick="downloadText('textOut','output.txt','text/plain')" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">Download .txt</button>
+            <span id="textStats" style="font-size:0.8rem;color:var(--link-color);align-self:center"></span>
+        </div>
+    </div>
+
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Word / Character Counter</h3>
+        <textarea class="mono" id="counterIn" placeholder="Paste text here…" style="min-height:100px" oninput="updateCounter()"></textarea>
+        <div class="stat-box">
+            <div class="stat-item"><div class="result-label">Characters</div><div class="stat-value" id="cntChars">0</div></div>
+            <div class="stat-item"><div class="result-label">No spaces</div><div class="stat-value" id="cntCharsNoSp">0</div></div>
+            <div class="stat-item"><div class="result-label">Words</div><div class="stat-value" id="cntWords">0</div></div>
+            <div class="stat-item"><div class="result-label">Lines</div><div class="stat-value" id="cntLines">0</div></div>
+            <div class="stat-item"><div class="result-label">Sentences</div><div class="stat-value" id="cntSent">0</div></div>
+            <div class="stat-item"><div class="result-label">Paragraphs</div><div class="stat-value" id="cntPara">0</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- NUMBERS -->
+<div id="tab-numbers" class="tab-content">
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Number Base Converter</h3>
+        <p style="font-size:0.85rem;color:var(--link-color);margin:0 0 16px">Type in any field to convert to all others.</p>
+        <div class="base-grid">
+            <div class="form-group">
+                <label>Decimal (base 10)</label>
+                <input type="text" id="baseDec" placeholder="255" oninput="convertBase(this,'dec')">
+            </div>
+            <div class="form-group">
+                <label>Hexadecimal (base 16)</label>
+                <input type="text" id="baseHex" placeholder="FF" oninput="convertBase(this,'hex')">
+            </div>
+            <div class="form-group">
+                <label>Binary (base 2)</label>
+                <input type="text" id="baseBin" placeholder="11111111" oninput="convertBase(this,'bin')">
+            </div>
+            <div class="form-group">
+                <label>Octal (base 8)</label>
+                <input type="text" id="baseOct" placeholder="377" oninput="convertBase(this,'oct')">
+            </div>
+        </div>
+        <div id="baseError" style="color:#ff6b6b;font-size:0.85rem;margin-top:8px;display:none"></div>
+    </div>
+</div>
+
+<!-- HASH -->
+<div id="tab-hash" class="tab-content">
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Hash Generator</h3>
+        <p style="font-size:0.85rem;color:var(--link-color);margin:0 0 16px">Computed locally in your browser using the Web Crypto API.</p>
+        <div class="form-group">
+            <label>Input text</label>
+            <textarea class="mono" id="hashIn" placeholder="Enter text to hash…" style="min-height:80px" oninput="autoHash()"></textarea>
+        </div>
+        <div class="form-group" style="margin-top:8px">
+            <label>Or hash a file</label>
+            <input type="file" id="hashFile" style="display:block;width:100%;box-sizing:border-box" onchange="hashFileInput()">
+        </div>
+        <div style="margin-top:16px">
+            <div class="result-label">MD5 <span style="font-size:0.7rem;opacity:0.6">(not cryptographically secure)</span></div>
+            <input type="text" id="hashMd5" readonly style="font-family:monospace;font-size:12px;width:100%;box-sizing:border-box" placeholder="-">
+            <div class="result-label" style="margin-top:12px">SHA-1 <span style="font-size:0.7rem;opacity:0.6">(not cryptographically secure)</span></div>
+            <input type="text" id="hashSha1" readonly style="font-family:monospace;font-size:12px;width:100%;box-sizing:border-box" placeholder="-">
+            <div class="result-label" style="margin-top:12px">SHA-256</div>
+            <input type="text" id="hashSha256" readonly style="font-family:monospace;font-size:12px;width:100%;box-sizing:border-box" placeholder="-">
+            <div class="result-label" style="margin-top:12px">SHA-512</div>
+            <input type="text" id="hashSha512" readonly style="font-family:monospace;font-size:12px;width:100%;box-sizing:border-box" placeholder="-">
+        </div>
+    </div>
+</div>
+
+<!-- TIMESTAMP -->
+<div id="tab-timestamp" class="tab-content">
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Unix Timestamp Converter</h3>
+        <div class="tool-row">
+            <div class="tool-col">
+                <div class="form-group">
+                    <label>Unix timestamp (seconds)</label>
+                    <div style="display:flex;gap:8px">
+                        <input type="number" id="tsUnix" placeholder="e.g. 1700000000" style="flex:1">
+                        <button onclick="tsFromUnix()">Convert</button>
+                    </div>
+                </div>
+                <div style="margin-top:8px">
+                    <button onclick="tsNow()" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color);font-size:0.85rem">Use current time</button>
+                </div>
+            </div>
+            <div class="tool-arrow" style="padding-top:28px">&#8644;</div>
+            <div class="tool-col">
+                <div class="form-group">
+                    <label>Human-readable (local)</label>
+                    <input type="datetime-local" id="tsHuman" style="width:100%;box-sizing:border-box">
+                </div>
+                <div style="margin-top:8px">
+                    <button onclick="tsFromHuman()">Convert</button>
+                </div>
+            </div>
+        </div>
+        <div id="tsResult" style="margin-top:20px;display:none">
+            <div class="base-grid" style="gap:12px">
+                <div><div class="result-label">Unix (s)</div><input type="text" id="tsOutSec" readonly style="font-family:monospace;font-size:13px;width:100%;box-sizing:border-box"></div>
+                <div><div class="result-label">Unix (ms)</div><input type="text" id="tsOutMs" readonly style="font-family:monospace;font-size:13px;width:100%;box-sizing:border-box"></div>
+                <div><div class="result-label">UTC</div><input type="text" id="tsOutUtc" readonly style="font-family:monospace;font-size:13px;width:100%;box-sizing:border-box"></div>
+                <div><div class="result-label">ISO 8601</div><input type="text" id="tsOutIso" readonly style="font-family:monospace;font-size:13px;width:100%;box-sizing:border-box"></div>
+                <div><div class="result-label">Relative</div><input type="text" id="tsOutRel" readonly style="font-family:monospace;font-size:13px;width:100%;box-sizing:border-box"></div>
+                <div><div class="result-label">Day of week</div><input type="text" id="tsOutDay" readonly style="font-family:monospace;font-size:13px;width:100%;box-sizing:border-box"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MARKDOWN -->
+<div id="tab-markdown" class="tab-content">
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Markdown Editor</h3>
+        <div class="md-split">
+            <div>
+                <div class="result-label">Markdown source</div>
+                <textarea class="mono" id="mdIn" placeholder="# Hello World&#10;&#10;**Bold**, *italic*, and `code`.&#10;&#10;- Item one&#10;- Item two&#10;&#10;> A blockquote" style="min-height:320px" oninput="mdLive()"></textarea>
+            </div>
+            <div>
+                <div class="result-label">HTML output</div>
+                <textarea class="mono" id="mdOut" readonly style="min-height:320px" placeholder="HTML will appear here…"></textarea>
+            </div>
+        </div>
+        <div class="tool-actions" style="margin-top:12px">
+            <button onclick="copyText('mdOut')">Copy HTML</button>
+            <button onclick="downloadText('mdOut','output.html','text/html')" style="background:transparent;border:1px solid var(--form-border-color);color:var(--text-color)">Download .html</button>
+            <span id="mdStatus" style="font-size:0.8rem;color:var(--link-color);align-self:center"></span>
+        </div>
+        <p style="font-size:0.75rem;color:var(--link-color);margin:10px 0 0">Uses <a href="https://marked.js.org" target="_blank" rel="noopener" style="color:inherit">marked.js</a> loaded from CDN on first use.</p>
+    </div>
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Rendered Preview</h3>
+        <div id="mdPreview">
+            <span style="color:var(--link-color);font-size:0.85rem">Start typing Markdown above to see the preview.</span>
+        </div>
+    </div>
+</div>
+
+<!-- COLOR -->
+<div id="tab-color" class="tab-content">
+    <div class="tool-card">
+        <h3 style="text-align:left;margin-top:0">Color Format Converter</h3>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+            <input type="color" id="colorPicker" value="#ff80cc" style="width:56px;height:56px;padding:2px;border-radius:8px;cursor:pointer" oninput="colorFromPicker()">
+            <span style="font-size:0.85rem;color:var(--link-color)">Pick a color or type in any field below</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group">
+                <label>HEX</label>
+                <input type="text" id="colorHex" placeholder="#FF80CC" oninput="colorFromField('hex')">
+            </div>
+            <div class="form-group">
+                <label>RGB</label>
+                <input type="text" id="colorRgb" placeholder="rgb(255, 128, 204)" oninput="colorFromField('rgb')">
+            </div>
+            <div class="form-group">
+                <label>HSL</label>
+                <input type="text" id="colorHsl" placeholder="hsl(318, 100%, 75%)" oninput="colorFromField('hsl')">
+            </div>
+            <div class="form-group">
+                <label>HSV / HSB</label>
+                <input type="text" id="colorHsv" placeholder="hsv(318, 50%, 100%)" oninput="colorFromField('hsv')">
+            </div>
+            <div class="form-group">
+                <label>CMYK</label>
+                <input type="text" id="colorCmyk" placeholder="cmyk(0%, 50%, 20%, 0%)" oninput="colorFromField('cmyk')">
+            </div>
+            <div class="form-group">
+                <label>CSS name (if any)</label>
+                <input type="text" id="colorName" readonly placeholder="-">
+            </div>
+        </div>
+        <div style="margin-top:16px;display:flex;align-items:center;gap:16px">
+            <div id="colorSwatch" style="width:80px;height:56px;border-radius:8px;border:1px solid var(--form-border-color);background:#ff80cc"></div>
+            <div id="colorContrast" style="font-size:0.82rem;color:var(--link-color)"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Tools Page Scripts -->
+<script>
+    // ── Daily tool-operation limit ────────────────────────────────────────────────
+    const _TL_PLAN    = '<%= (locals.user && user.plan) ? user.plan : "guest" %>';
+    const _TL_BILLING = '<%- (!locals.monetizationHidden && locals.billingUrl && billingUrl) ? billingUrl : "" %>';
+    const _TL_LIMITS  = { guest: 50, free: 50, pro: null, studio: null };
+    const _TL_KEY     = 'ts_tools';
+    const _TL_TODAY   = new Date().toISOString().slice(0, 10);
+
+    // Returns the number of tool operations used today
+    function _tlUsed() {
+        try {
+            var d = JSON.parse(localStorage.getItem(_TL_KEY) || '{}');
+            return (d.date === _TL_TODAY) ? (d.count || 0) : 0;
+        } catch(e) { return 0; }
+    }
+
+    // Increments the tool operation count for today
+    function _tlIncrement() {
+        try {
+            var d = JSON.parse(localStorage.getItem(_TL_KEY) || '{}');
+            var count = (d.date === _TL_TODAY ? (d.count || 0) : 0) + 1;
+            localStorage.setItem(_TL_KEY, JSON.stringify({ date: _TL_TODAY, count: count }));
+        } catch(e) {}
+    }
+
+    // Checks if the user has reached their daily tool-operation limit
+    function toolOp() {
+        var limit = (_TL_LIMITS[_TL_PLAN] !== undefined) ? _TL_LIMITS[_TL_PLAN] : _TL_LIMITS.free;
+        if (limit === null) return true;
+        var used = _tlUsed();
+        if (used >= limit) {
+            var upgradeHtml = _TL_BILLING
+                ? ' <a href="' + _TL_BILLING + '" target="_blank" rel="noopener" style="color:var(--link-color)">Upgrade ↗</a>'
+                : '';
+            var el = document.getElementById('_tlLimitMsg');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = '_tlLimitMsg';
+                el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--form-bg-color);border:1px solid var(--form-border-color);border-radius:8px;padding:10px 18px;font-size:0.82rem;z-index:9999;box-shadow:0 2px 14px rgba(0,0,0,0.18);white-space:nowrap';
+                document.body.appendChild(el);
+            }
+            el.innerHTML = 'Daily limit reached (' + used + '/' + limit + ' tool operations).' + upgradeHtml +
+                ' <button onclick="document.getElementById(\'_tlLimitMsg\').remove()" style="background:transparent;border:none;cursor:pointer;font-size:1rem;margin-left:8px;opacity:0.5;vertical-align:middle">×</button>';
+            return false;
+        }
+        _tlIncrement();
+        return true;
+    }
+
+    // ── Tab Switching ─────────────────────────────────────────────────────────────
+    function switchTab(id, btn) {
+        document.querySelectorAll('.tab-content').forEach(function(t){ t.classList.remove('active'); });
+        document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+        document.getElementById('tab-' + id).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    // ── Base64 ───────────────────────────────────────────────────────────────────
+    document.getElementById('b64FileMode').addEventListener('change', function() {
+        document.getElementById('b64File').style.display = this.checked ? 'block' : 'none';
+    });
+    function b64Encode() {
+        if (!toolOp()) return;
+        try { document.getElementById('b64Out').value = btoa(document.getElementById('b64In').value); }
+        catch(e) { document.getElementById('b64Out').value = btoa(unescape(encodeURIComponent(document.getElementById('b64In').value))); }
+    }
+    function b64Decode() {
+        if (!toolOp()) return;
+        try { document.getElementById('b64In').value = atob(document.getElementById('b64Out').value.trim()); }
+        catch(e) { document.getElementById('b64In').value = 'Error decoding: ' + e.message; }
+    }
+    function b64EncodeFile() {
+        if (!toolOp()) return;
+        var file = document.getElementById('b64File').files[0]; if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(e) { document.getElementById('b64Out').value = e.target.result.split(',')[1]; };
+        reader.readAsDataURL(file);
+    }
+
+    // ── URL Encoding ──────────────────────────────────────────────────────────────
+    function urlEncode() { if (!toolOp()) return; document.getElementById('urlOut').value = encodeURIComponent(document.getElementById('urlIn').value); }
+    function urlDecode() {
+        if (!toolOp()) return;
+        try { document.getElementById('urlIn').value = decodeURIComponent(document.getElementById('urlOut').value); }
+        catch(e) { document.getElementById('urlIn').value = 'Decode error: ' + e.message; }
+    }
+
+    // ── HTML Entity Encoding ──────────────────────────────────────────────────────
+    function htmlEncode() {
+        if (!toolOp()) return;
+        var t = document.getElementById('htmlIn').value;
+        document.getElementById('htmlOut').value = t
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function htmlDecode() {
+        if (!toolOp()) return;
+        var d = document.createElement('div');
+        d.innerHTML = document.getElementById('htmlOut').value;
+        document.getElementById('htmlIn').value = d.textContent;
+    }
+
+    // ── Text Transformer ──────────────────────────────────────────────────────────
+    function textTransform(op) {
+        if (!toolOp()) return;
+        var inp = document.getElementById('textIn').value;
+        var out;
+        switch(op) {
+            case 'upper':       out = inp.toUpperCase(); break;
+            case 'lower':       out = inp.toLowerCase(); break;
+            case 'title':       out = inp.replace(/\b\w/g, function(c){ return c.toUpperCase(); }); break;
+            case 'sentence':    out = inp.replace(/(^\s*\w|[.!?]\s+\w)/g, function(c){ return c.toUpperCase(); }); break;
+            case 'camel':       out = inp.trim().replace(/[\s_-]+(\w)/g, function(_,c){ return c.toUpperCase(); }).replace(/^\w/, function(c){ return c.toLowerCase(); }); break;
+            case 'snake':       out = inp.trim().toLowerCase().replace(/[\s-]+/g,'_').replace(/[^\w_]/g,''); break;
+            case 'kebab':       out = inp.trim().toLowerCase().replace(/[\s_]+/g,'-').replace(/[^\w-]/g,''); break;
+            case 'reverse':     out = inp.split('').reverse().join(''); break;
+            case 'lines':       out = inp.split('\n').sort().join('\n'); break;
+            case 'dedup':       out = inp.split('\n').filter(function(v,i,a){ return a.indexOf(v)===i; }).join('\n'); break;
+            case 'trim':        out = inp.split('\n').map(function(l){ return l.trim(); }).join('\n'); break;
+            case 'removeEmpty': out = inp.split('\n').filter(function(l){ return l.trim().length > 0; }).join('\n'); break;
+            default:            out = inp;
+        }
+        document.getElementById('textOut').value = out;
+        var wc = out.trim().split(/\s+/).filter(Boolean).length;
+        document.getElementById('textStats').textContent = out.length + ' chars · ' + wc + ' words';
+    }
+
+    // ── Word Counter ──────────────────────────────────────────────────────────────
+    function updateCounter() {
+        var t = document.getElementById('counterIn').value;
+        document.getElementById('cntChars').textContent = t.length;
+        document.getElementById('cntCharsNoSp').textContent = t.replace(/\s/g,'').length;
+        document.getElementById('cntWords').textContent = t.trim() ? t.trim().split(/\s+/).length : 0;
+        document.getElementById('cntLines').textContent = t ? t.split('\n').length : 0;
+        document.getElementById('cntSent').textContent = (t.match(/[.!?]+/g) || []).length;
+        document.getElementById('cntPara').textContent = t.trim() ? t.trim().split(/\n\s*\n/).length : 0;
+    }
+
+    // ── Number Base Converter ────────────────────────────────────────────────────
+    function convertBase(src, from) {
+        var errEl = document.getElementById('baseError');
+        errEl.style.display = 'none';
+        var raw = src.value.trim().toUpperCase();
+        if (!raw) {
+            ['baseDec','baseHex','baseBin','baseOct'].forEach(function(id){ if(document.getElementById(id) !== src) document.getElementById(id).value = ''; });
+            return;
+        }
+        var dec;
+        try {
+            switch(from) {
+                case 'dec': dec = parseInt(raw, 10); break;
+                case 'hex': dec = parseInt(raw, 16); break;
+                case 'bin': dec = parseInt(raw, 2); break;
+                case 'oct': dec = parseInt(raw, 8); break;
+            }
+            if (isNaN(dec)) throw new Error('Invalid input');
+        } catch(e) {
+            errEl.textContent = 'Invalid input for selected base.';
+            errEl.style.display = 'block';
+            return;
+        }
+        if (from !== 'dec') document.getElementById('baseDec').value = dec.toString(10);
+        if (from !== 'hex') document.getElementById('baseHex').value = dec.toString(16).toUpperCase();
+        if (from !== 'bin') document.getElementById('baseBin').value = dec.toString(2);
+        if (from !== 'oct') document.getElementById('baseOct').value = dec.toString(8);
+    }
+
+    // ── Hash Generator ───────────────────────────────────────────────────────────
+    var _hashDebounce = null;
+    function autoHash() {
+        clearTimeout(_hashDebounce);
+        _hashDebounce = setTimeout(function() {
+            var text = document.getElementById('hashIn').value;
+            if (!text) { ['hashMd5','hashSha1','hashSha256','hashSha512'].forEach(function(id){ document.getElementById(id).value = ''; }); return; }
+            computeHashes(new TextEncoder().encode(text));
+        }, 300);
+    }
+    function hashFileInput() {
+        if (!toolOp()) return;
+        var file = document.getElementById('hashFile').files[0]; if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(e) { computeHashes(new Uint8Array(e.target.result)); };
+        reader.readAsArrayBuffer(file);
+    }
+    async function computeHashes(data) {
+        // SHA-1, SHA-256, and SHA-512 are available in Web Crypto API
+        async function sha(algo, data) {
+            var buf = await crypto.subtle.digest(algo, data);
+            return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+        }
+
+        // MD5 is not available in Web Crypto API, so I implement it manually
+        function md5(input) {
+            function safeAdd(x,y){ var lsw=(x&0xFFFF)+(y&0xFFFF),msw=(x>>16)+(y>>16)+(lsw>>16); return (msw<<16)|(lsw&0xFFFF); }
+            function bitRotateLeft(num,cnt){ return (num<<cnt)|(num>>>(32-cnt)); }
+            function md5cmn(q,a,b,x,s,t){ return safeAdd(bitRotateLeft(safeAdd(safeAdd(a,q),safeAdd(x,t)),s),b); }
+            function md5ff(a,b,c,d,x,s,t){ return md5cmn((b&c)|((~b)&d),a,b,x,s,t); }
+            function md5gg(a,b,c,d,x,s,t){ return md5cmn((b&d)|(c&(~d)),a,b,x,s,t); }
+            function md5hh(a,b,c,d,x,s,t){ return md5cmn(b^c^d,a,b,x,s,t); }
+            function md5ii(a,b,c,d,x,s,t){ return md5cmn(c^(b|(~d)),a,b,x,s,t); }
+            var arr=new Uint8Array(input),len8=arr.length,len16=Math.ceil((len8+9)/4)+1,M=new Int32Array(len16*4);
+            for(var i=0;i<len8;i++) M[i>>2]|=arr[i]<<((i%4)*8);
+            M[len8>>2]|=0x80<<((len8%4)*8); M[len16*4-2]=len8*8;
+            var words=M,a=0x67452301,b=0xefcdab89,c=0x98badcfe,d=0x10325476;
+            for(var o=0;o<words.length;o+=16){
+                var A=a,B=b,C=c,D=d;
+                a=md5ff(a,b,c,d,words[o+0],7,-680876936);d=md5ff(d,a,b,c,words[o+1],12,-389564586);c=md5ff(c,d,a,b,words[o+2],17,606105819);b=md5ff(b,c,d,a,words[o+3],22,-1044525330);
+                a=md5ff(a,b,c,d,words[o+4],7,-176418897);d=md5ff(d,a,b,c,words[o+5],12,1200080426);c=md5ff(c,d,a,b,words[o+6],17,-1473231341);b=md5ff(b,c,d,a,words[o+7],22,-45705983);
+                a=md5ff(a,b,c,d,words[o+8],7,1770035416);d=md5ff(d,a,b,c,words[o+9],12,-1958414417);c=md5ff(c,d,a,b,words[o+10],17,-42063);b=md5ff(b,c,d,a,words[o+11],22,-1990404162);
+                a=md5ff(a,b,c,d,words[o+12],7,1804603682);d=md5ff(d,a,b,c,words[o+13],12,-40341101);c=md5ff(c,d,a,b,words[o+14],17,-1502002290);b=md5ff(b,c,d,a,words[o+15],22,1236535329);
+                a=md5gg(a,b,c,d,words[o+1],5,-165796510);d=md5gg(d,a,b,c,words[o+6],9,-1069501632);c=md5gg(c,d,a,b,words[o+11],14,643717713);b=md5gg(b,c,d,a,words[o+0],20,-373897302);
+                a=md5gg(a,b,c,d,words[o+5],5,-701558691);d=md5gg(d,a,b,c,words[o+10],9,38016083);c=md5gg(c,d,a,b,words[o+15],14,-660478335);b=md5gg(b,c,d,a,words[o+4],20,-405537848);
+                a=md5gg(a,b,c,d,words[o+9],5,568446438);d=md5gg(d,a,b,c,words[o+14],9,-1019803690);c=md5gg(c,d,a,b,words[o+3],14,-187363961);b=md5gg(b,c,d,a,words[o+8],20,1163531501);
+                a=md5gg(a,b,c,d,words[o+13],5,-1444681467);d=md5gg(d,a,b,c,words[o+2],9,-51403784);c=md5gg(c,d,a,b,words[o+7],14,1735328473);b=md5gg(b,c,d,a,words[o+12],20,-1926607734);
+                a=md5hh(a,b,c,d,words[o+5],4,-378558);d=md5hh(d,a,b,c,words[o+8],11,-2022574463);c=md5hh(c,d,a,b,words[o+11],16,1839030562);b=md5hh(b,c,d,a,words[o+14],23,-35309556);
+                a=md5hh(a,b,c,d,words[o+1],4,-1530992060);d=md5hh(d,a,b,c,words[o+4],11,1272893353);c=md5hh(c,d,a,b,words[o+7],16,-155497632);b=md5hh(b,c,d,a,words[o+10],23,-1094730640);
+                a=md5hh(a,b,c,d,words[o+13],4,681279174);d=md5hh(d,a,b,c,words[o+0],11,-358537222);c=md5hh(c,d,a,b,words[o+3],16,-722521979);b=md5hh(b,c,d,a,words[o+6],23,76029189);
+                a=md5hh(a,b,c,d,words[o+9],4,-640364487);d=md5hh(d,a,b,c,words[o+12],11,-421815835);c=md5hh(c,d,a,b,words[o+15],16,530742520);b=md5hh(b,c,d,a,words[o+2],23,-995338651);
+                a=md5ii(a,b,c,d,words[o+0],6,-198630844);d=md5ii(d,a,b,c,words[o+7],10,1126891415);c=md5ii(c,d,a,b,words[o+14],15,-1416354905);b=md5ii(b,c,d,a,words[o+5],21,-57434055);
+                a=md5ii(a,b,c,d,words[o+12],6,1700485571);d=md5ii(d,a,b,c,words[o+3],10,-1894986606);c=md5ii(c,d,a,b,words[o+10],15,-1051523);b=md5ii(b,c,d,a,words[o+1],21,-2054922799);
+                a=md5ii(a,b,c,d,words[o+8],6,1873313359);d=md5ii(d,a,b,c,words[o+15],10,-30611744);c=md5ii(c,d,a,b,words[o+6],15,-1560198380);b=md5ii(b,c,d,a,words[o+13],21,1309151649);
+                a=md5ii(a,b,c,d,words[o+4],6,-145523070);d=md5ii(d,a,b,c,words[o+11],10,-1120210379);c=md5ii(c,d,a,b,words[o+2],15,718787259);b=md5ii(b,c,d,a,words[o+9],21,-343485551);
+                a=safeAdd(a,A);b=safeAdd(b,B);c=safeAdd(c,C);d=safeAdd(d,D);
+            }
+            function w(n){ return [(n&0xFF),((n>>8)&0xFF),((n>>16)&0xFF),((n>>24)&0xFF)]; }
+            var out2=[].concat(w(a),w(b),w(c),w(d));
+            return out2.map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+        }
+        document.getElementById('hashMd5').value = md5(data);
+        Promise.all([sha('SHA-1',data),sha('SHA-256',data),sha('SHA-512',data)]).then(function(r){
+            document.getElementById('hashSha1').value=r[0];
+            document.getElementById('hashSha256').value=r[1];
+            document.getElementById('hashSha512').value=r[2];
+        });
+    }
+
+    // ── Timestamp ────────────────────────────────────────────────────────────────
+    // Converts current time to Unix timestamp and updates the fields
+    function tsNow() { if (!toolOp()) return; document.getElementById('tsUnix').value = Math.floor(Date.now() / 1000); tsFromUnix(); }
+
+    // Converts Unix timestamp to human-readable format and updates the fields
+    function tsFromUnix() {
+        var secs = parseInt(document.getElementById('tsUnix').value); if (isNaN(secs)) return;
+        var d = new Date(secs * 1000);
+        var pad = function(n){ return String(n).padStart(2,'0'); };
+        document.getElementById('tsHuman').value = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+        showTsResult(d, secs);
+    }
+
+    // Converts human-readable date/time to Unix timestamp and updates the fields
+    function tsFromHuman() {
+        var val = document.getElementById('tsHuman').value; if (!val) return;
+        var d = new Date(val), secs = Math.floor(d.getTime() / 1000);
+        document.getElementById('tsUnix').value = secs; showTsResult(d, secs);
+    }
+
+    // Updates the result fields with various formats based on the given date and Unix timestamp
+    function showTsResult(d, secs) {
+        document.getElementById('tsResult').style.display = 'block';
+        document.getElementById('tsOutSec').value = secs;
+        document.getElementById('tsOutMs').value = secs * 1000;
+        document.getElementById('tsOutUtc').value = d.toUTCString();
+        document.getElementById('tsOutIso').value = d.toISOString();
+        document.getElementById('tsOutDay').value = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()];
+        var now = Date.now() / 1000, diff = Math.abs(now - secs), dir = secs > now ? 'from now' : 'ago', rel;
+        if (diff < 60) rel = Math.round(diff) + ' seconds ' + dir;
+        else if (diff < 3600) rel = Math.round(diff/60) + ' minutes ' + dir;
+        else if (diff < 86400) rel = Math.round(diff/3600) + ' hours ' + dir;
+        else rel = Math.round(diff/86400) + ' days ' + dir;
+        document.getElementById('tsOutRel').value = rel;
+    }
+
+    // ── Markdown ──────────────────────────────────────────────────────────────────
+    var _markedLoaded = false, _mdDebounce = null;
+
+    // Loads marked.js from CDN if not already loaded, then calls the callback
+    function ensureMarked(cb) {
+        if (_markedLoaded) { cb(); return; }
+        var s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js';
+        s.onload = function(){ _markedLoaded = true; cb(); };
+        document.head.appendChild(s);
+    }
+
+    // Debounced function to convert Markdown input to HTML output and update the preview
+    function mdLive() {
+        clearTimeout(_mdDebounce);
+        _mdDebounce = setTimeout(function() {
+            ensureMarked(function() {
+                var md = document.getElementById('mdIn').value;
+                var html = marked.parse(md);
+                document.getElementById('mdOut').value = html;
+                document.getElementById('mdPreview').innerHTML = html;
+                document.getElementById('mdStatus').textContent = html.length + ' bytes of HTML';
+            });
+        }, 250);
+    }
+
+    // ── Color ──────────────────────────────────────────────────────────────────────
+    var CSS_NAMES = {aliceblue:'#F0F8FF',antiquewhite:'#FAEBD7',aqua:'#00FFFF',aquamarine:'#7FFFD4',azure:'#F0FFFF',beige:'#F5F5DC',bisque:'#FFE4C4',black:'#000000',blanchedalmond:'#FFEBCD',blue:'#0000FF',blueviolet:'#8A2BE2',brown:'#A52A2A',burlywood:'#DEB887',cadetblue:'#5F9EA0',chartreuse:'#7FFF00',chocolate:'#D2691E',coral:'#FF7F50',cornflowerblue:'#6495ED',cornsilk:'#FFF8DC',crimson:'#DC143C',cyan:'#00FFFF',darkblue:'#00008B',darkcyan:'#008B8B',darkgoldenrod:'#B8860B',darkgray:'#A9A9A9',darkgreen:'#006400',darkkhaki:'#BDB76B',darkmagenta:'#8B008B',darkolivegreen:'#556B2F',darkorange:'#FF8C00',darkorchid:'#9932CC',darkred:'#8B0000',darksalmon:'#E9967A',darkseagreen:'#8FBC8F',darkslateblue:'#483D8B',darkslategray:'#2F4F4F',darkturquoise:'#00CED1',darkviolet:'#9400D3',deeppink:'#FF1493',deepskyblue:'#00BFFF',dimgray:'#696969',dodgerblue:'#1E90FF',firebrick:'#B22222',floralwhite:'#FFFAF0',forestgreen:'#228B22',fuchsia:'#FF00FF',gainsboro:'#DCDCDC',ghostwhite:'#F8F8FF',gold:'#FFD700',goldenrod:'#DAA520',gray:'#808080',green:'#008000',greenyellow:'#ADFF2F',honeydew:'#F0FFF0',hotpink:'#FF69B4',indianred:'#CD5C5C',indigo:'#4B0082',ivory:'#FFFFF0',khaki:'#F0E68C',lavender:'#E6E6FA',lavenderblush:'#FFF0F5',lawngreen:'#7CFC00',lemonchiffon:'#FFFACD',lightblue:'#ADD8E6',lightcoral:'#F08080',lightcyan:'#E0FFFF',lightgoldenrodyellow:'#FAFAD2',lightgray:'#D3D3D3',lightgreen:'#90EE90',lightpink:'#FFB6C1',lightsalmon:'#FFA07A',lightseagreen:'#20B2AA',lightskyblue:'#87CEFA',lightslategray:'#778899',lightsteelblue:'#B0C4DE',lightyellow:'#FFFFE0',lime:'#00FF00',limegreen:'#32CD32',linen:'#FAF0E6',magenta:'#FF00FF',maroon:'#800000',mediumaquamarine:'#66CDAA',mediumblue:'#0000CD',mediumorchid:'#BA55D3',mediumpurple:'#9370DB',mediumseagreen:'#3CB371',mediumslateblue:'#7B68EE',mediumspringgreen:'#00FA9A',mediumturquoise:'#48D1CC',mediumvioletred:'#C71585',midnightblue:'#191970',mintcream:'#F5FFFA',mistyrose:'#FFE4E1',moccasin:'#FFE4B5',navajowhite:'#FFDEAD',navy:'#000080',oldlace:'#FDF5E6',olive:'#808000',olivedrab:'#6B8E23',orange:'#FFA500',orangered:'#FF4500',orchid:'#DA70D6',palegoldenrod:'#EEE8AA',palegreen:'#98FB98',paleturquoise:'#AFEEEE',palevioletred:'#DB7093',papayawhip:'#FFEFD5',peachpuff:'#FFDAB9',peru:'#CD853F',pink:'#FFC0CB',plum:'#DDA0DD',powderblue:'#B0E0E6',purple:'#800080',red:'#FF0000',rosybrown:'#BC8F8F',royalblue:'#4169E1',saddlebrown:'#8B4513',salmon:'#FA8072',sandybrown:'#F4A460',seagreen:'#2E8B57',seashell:'#FFF5EE',sienna:'#A0522D',silver:'#C0C0C0',skyblue:'#87CEEB',slateblue:'#6A5ACD',slategray:'#708090',snow:'#FFFAFA',springgreen:'#00FF7F',steelblue:'#4682B4',tan:'#D2B48C',teal:'#008080',thistle:'#D8BFD8',tomato:'#FF6347',turquoise:'#40E0D0',violet:'#EE82EE',wheat:'#F5DEB3',white:'#FFFFFF',whitesmoke:'#F5F5F5',yellow:'#FFFF00',yellowgreen:'#9ACD32'};
+
+    function hexToRgb(hex) {
+        hex = hex.replace(/^#/,'');
+        if (hex.length === 3) hex = hex.split('').map(function(c){ return c+c; }).join('');
+        return {r:parseInt(hex.slice(0,2),16),g:parseInt(hex.slice(2,4),16),b:parseInt(hex.slice(4,6),16)};
+    }
+    function rgbToHex(r,g,b) {
+        return '#'+[r,g,b].map(function(v){ return Math.round(v).toString(16).padStart(2,'0').toUpperCase(); }).join('');
+    }
+    function rgbToHsl(r,g,b) {
+        r/=255;g/=255;b/=255;
+        var max=Math.max(r,g,b),min=Math.min(r,g,b),l=(max+min)/2,s=0,h=0;
+        if(max!==min){var d=max-min;s=l>0.5?d/(2-max-min):d/(max+min);switch(max){case r:h=((g-b)/d+(g<b?6:0))/6;break;case g:h=((b-r)/d+2)/6;break;case b:h=((r-g)/d+4)/6;break;}}
+        return {h:Math.round(h*360),s:Math.round(s*100),l:Math.round(l*100)};
+    }
+    function hslToRgb(h,s,l) {
+        s/=100;l/=100;
+        var c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2,r=0,g=0,b=0;
+        if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}
+        return {r:Math.round((r+m)*255),g:Math.round((g+m)*255),b:Math.round((b+m)*255)};
+    }
+    function rgbToHsv(r,g,b) {
+        r/=255;g/=255;b/=255;
+        var max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min,s=max===0?0:d/max,h=0;
+        if(max!==min){switch(max){case r:h=((g-b)/d+(g<b?6:0))/6;break;case g:h=((b-r)/d+2)/6;break;case b:h=((r-g)/d+4)/6;break;}}
+        return {h:Math.round(h*360),s:Math.round(s*100),v:Math.round(max*100)};
+    }
+    function hsvToRgb(h,s,v) {
+        s/=100;v/=100;
+        var i=Math.floor(h/60)%6,f=h/60-Math.floor(h/60),p=v*(1-s),q=v*(1-f*s),t=v*(1-(1-f)*s),r,g,b;
+        switch(i){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;default:r=v;g=p;b=q;}
+        return {r:Math.round(r*255),g:Math.round(g*255),b:Math.round(b*255)};
+    }
+    function rgbToCmyk(r,g,b) {
+        r/=255;g/=255;b/=255;
+        var k=1-Math.max(r,g,b);
+        if(k===1) return {c:0,m:0,y:0,k:100};
+        return {c:Math.round((1-r-k)/(1-k)*100),m:Math.round((1-g-k)/(1-k)*100),y:Math.round((1-b-k)/(1-k)*100),k:Math.round(k*100)};
+    }
+    function cmykToRgb(c,m,y,k) {
+        c/=100;m/=100;y/=100;k/=100;
+        return {r:Math.round(255*(1-c)*(1-k)),g:Math.round(255*(1-m)*(1-k)),b:Math.round(255*(1-y)*(1-k))};
+    }
+    function luminance(r,g,b) {
+        var a=[r,g,b].map(function(v){ v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
+        return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
+    }
+    function setAllColorFields(r,g,b) {
+        var hex=rgbToHex(r,g,b),hsl=rgbToHsl(r,g,b),hsv=rgbToHsv(r,g,b),cmyk=rgbToCmyk(r,g,b);
+        document.getElementById('colorHex').value=hex;
+        document.getElementById('colorRgb').value='rgb('+r+', '+g+', '+b+')';
+        document.getElementById('colorHsl').value='hsl('+hsl.h+', '+hsl.s+'%, '+hsl.l+'%)';
+        document.getElementById('colorHsv').value='hsv('+hsv.h+', '+hsv.s+'%, '+hsv.v+'%)';
+        document.getElementById('colorCmyk').value='cmyk('+cmyk.c+'%, '+cmyk.m+'%, '+cmyk.y+'%, '+cmyk.k+'%)';
+        document.getElementById('colorPicker').value=hex.length===7?hex:'#000000';
+        document.getElementById('colorSwatch').style.background=hex;
+        var name='';
+        Object.keys(CSS_NAMES).forEach(function(n){ if(CSS_NAMES[n].toUpperCase()===hex.toUpperCase()) name=n; });
+        document.getElementById('colorName').value=name||'-';
+        var L=luminance(r,g,b),Lw=luminance(255,255,255),Lb=luminance(0,0,0);
+        var contrastW=(Lw+0.05)/(L+0.05),contrastB=(L+0.05)/(Lb+0.05);
+        document.getElementById('colorContrast').innerHTML=
+            'Contrast vs white: <strong>'+contrastW.toFixed(2)+':1</strong> · vs black: <strong>'+contrastB.toFixed(2)+':1</strong>';
+    }
+    function colorFromPicker() {
+        var rgb=hexToRgb(document.getElementById('colorPicker').value);
+        setAllColorFields(rgb.r,rgb.g,rgb.b);
+    }
+    function colorFromField(type) {
+        try {
+            var rgb;
+            if(type==='hex'){rgb=hexToRgb(document.getElementById('colorHex').value.trim());}
+            else if(type==='rgb'){var m=document.getElementById('colorRgb').value.match(/(\d+)/g);rgb={r:+m[0],g:+m[1],b:+m[2]};}
+            else if(type==='hsl'){var m=document.getElementById('colorHsl').value.match(/[\d.]+/g);rgb=hslToRgb(+m[0],+m[1],+m[2]);}
+            else if(type==='hsv'){var m=document.getElementById('colorHsv').value.match(/[\d.]+/g);rgb=hsvToRgb(+m[0],+m[1],+m[2]);}
+            else if(type==='cmyk'){var m=document.getElementById('colorCmyk').value.match(/[\d.]+/g);rgb=cmykToRgb(+m[0],+m[1],+m[2],+m[3]);}
+            if(rgb&&!isNaN(rgb.r)) setAllColorFields(rgb.r,rgb.g,rgb.b);
+        } catch(e){}
+    }
+
+    // ── Shared helpers ────────────────────────────────────────────────────────────
+    function copyText(id) {
+        var el = document.getElementById(id);
+        if (el.select) { el.select(); document.execCommand('copy'); }
+    }
+    function downloadText(id, name, type) {
+        var text = document.getElementById(id).value;
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], {type:type}));
+        a.download = name; a.click();
+    }
+</script>
