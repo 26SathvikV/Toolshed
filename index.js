@@ -30,17 +30,12 @@ const crypto    = require('crypto');
 const fs        = require('fs');
 const os        = require('os');
 
-// TLS compatibility for Node 18 + MongoDB Atlas
-require('tls').DEFAULT_MAX_VERSION = 'TLSv1.2';
-
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
 app.disable('x-powered-by');
 
-const MONGO_TLS_OPTS = { tls: true, tlsInsecure: true };
-
-mongoose.connect(process.env.MONGODB_URI, MONGO_TLS_OPTS)
+mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('Connected to MongoDB'))
     .catch(err => console.error('MongoDB error:', err));
 
@@ -206,7 +201,6 @@ app.use(session({
     saveUninitialized: false,
     store: MongoStore.create({
         mongoUrl:            process.env.MONGODB_URI,
-        mongoClientOptions:  MONGO_TLS_OPTS,
         collectionName:      'sessions',
         ttl:                 7 * 24 * 60 * 60
     }),
